@@ -1,0 +1,53 @@
+Siempre que programes para este proyecto de Unity:
+
+# CONTEXTO DEL PROYECTO
+- Motor: Unity 6.
+- Sistema de Input: New Input System (Package).
+- Inteligencia Artificial: AI Navigation (NavMesh) + Unity Behavior (Gráficos de comportamiento nativos de Unity 6).
+- Gestión de Assets: Addressables System.
+- Audio: FMOD Unity Integration.
+- Comunicaciones: Vivox (Voice/Text Chat).
+
+# REGLAS GENERALES PARA UNITY C#
+- Utiliza las convenciones de código de C# para Unity (PascalCase para métodos, camelCase para variables locales).
+- Prioriza el uso del nuevo sistema de Input (Input System) si está instalado, o avísame si vas a usar el Input antiguo.
+- Asegúrate de que los scripts multijugador gestionen correctamente la autoridad del entorno local.
+- Evita usar el método Update() si puedes resolverlo mediante eventos o corrutinas para optimizar el rendimiento.
+- Usa siempre los principios SOLID, a no ser que haya una buena razón para no hacerlo.
+- Usa `TryGetComponent` en lugar de `GetComponent` para evitar asignaciones de memoria innecesarias y errores de referencia nula.
+- Si necesitas buscar un objeto, prohíbe terminantemente el uso de `GameObject.Find()` o `FindObjectOfType()` dentro de métodos que se ejecuten constantemente (como `Update` o `FixedUpdate`); en su lugar, usa referencias serializadas (`[SerializeField]`).
+- Todos los campos de clase que deban configurarse desde el Inspector de Unity deben ser privados y llevar el atributo `[SerializeField]`, nunca los hagas públicos a menos que sea estrictamente necesario.
+- Para la manipulación del Transform (como mover o rotar objetos), asegúrate de usar `Time.deltaTime` en `Update` y `Time.fixedDeltaTime` en `FixedUpdate`.
+
+# ARQUITECTURA MULTIJUGADOR (FISHNET + STEAM)
+- Framework de Red: FishNet.
+- Transporte: FishySteamworks (Steamworks.NET).
+- Todo script con lógica de red debe heredar de `FishNet.Object.NetworkBehaviour` en lugar de MonoBehaviour.
+- NUNCA uses comandos de Mirror o RPCs de Netcode. Usa los atributos nativos de FishNet:
+  * `[ServerRpc]` para enviar datos del cliente al servidor (añadir `requireOwnership: true/false` según el caso).
+  * `[ObserversRpc]` para enviar datos del servidor a todos los clientes.
+  * `[TargetRpc]` para enviar datos del servidor a un cliente específico.
+- Para variables sincronizadas, usa `readonly SyncVar<T>` o `[SyncVar]` de FishNet con sus respectivos eventos de cambio (OnChange).
+- Comprueba SIEMPRE la autoridad antes de procesar el Input System en red: usa `if (!IsOwner) return;` en los métodos de movimiento o acciones del jugador.
+- Diseña el código pensando en la predicción del lado del cliente (Client-Side Prediction) que ofrece FishNet nativamente para el movimiento físico.
+
+# MULTIJUGADOR LOCAL (PANTALLA PARTIDA)
+- El juego soporta multijugador local (Split-Screen).
+- Utiliza el componente `PlayerInputManager` del New Input System para gestionar el *Join* (unirse) de jugadores locales dinámicamente y la división de cámaras.
+- Asegúrate de que los scripts de los jugadores diferencien si están operando en una sesión puramente local o si están instanciados a través de la red de FishNet.
+
+# OPTIMIZACIÓN DE MEMORIA Y RENDIMIENTO
+- Evita la instanciación repetida de objetos mediante `Instantiate()`; si detectas que un objeto se va a crear y destruir muchas veces (como balas, partículas o enemigos), sugiéreme implementar un sistema de Object Pooling.
+- No concatenes strings en métodos cíclicos (`Update`); utiliza `StringBuilder` o interpolación de strings moderada.
+- Para comparar etiquetas de GameObject, utiliza siempre `other.CompareTag("Player")` en lugar de `other.tag == "Player"`, ya que este último genera basura en memoria.
+
+# FORMATO DE RESPUESTAS DE IA (AHORRO DE TOKENS)
+- Sé extremadamente conciso. No me des introducciones teóricas ni explicaciones largas de cómo funciona Unity a menos que te lo pida explícitamente.
+- Cuando modifiques un archivo existente, no me devuelvas todo el código completo si solo ha cambiado una sección; muestra únicamente las líneas modificadas o los métodos nuevos usando comentarios claros para saber dónde insertarlos.
+- Si una solución requiere instalar un paquete de Unity externo (como el Input System o Cinemachine), dímelo claramente antes de escribir el código.
+
+# BUENAS PRÁCTICAS Y OPTIMIZACIÓN DE TOKENS
+- Usa convenciones C# de Unity (PascalCase para métodos/clases, camelCase para privadas con [SerializeField]).
+- FMOD: No uses el sistema de audio nativo de Unity (`AudioSource`). Usa `FMODUnity.RuntimeManager.PlayOneShot` o referencias a `EventReference`.
+- Addressables: No uses `Resources.Load` ni asignaciones directas en el inspector para objetos pesados; usa `AssetReference` y métodos asíncronos (`LoadAssetAsync`).
+- Sé extremadamente directo. Entrega soluciones de código limpias, estructuradas y modulares. No des introducciones teóricas.

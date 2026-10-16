@@ -1,0 +1,29 @@
+# Carpetas temporales y de compilación de Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Build]/
+/[Cc]apture[Cc]ard/
+/[Uu]nityConfiguration/
+
+# Archivos de metadatos de Unity (Muy pesados para la IA)
+*.meta
+
+# Archivos de solución de Visual Studio / IDEs
+*.sln
+*.csproj
+*.unityproj
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+
+# Archivos del sistema y logs
+Crashdumps/
+*.log
+
+# Paquetes y assets externos grandes (Opcional)
+# Si descargas un Asset de la Asset Store que pesa mucho y no quieres que la IA lo lea:
+# /Assets/Plugins/
