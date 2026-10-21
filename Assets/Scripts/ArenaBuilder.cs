@@ -58,11 +58,22 @@ public static class ArenaBuilder
 
     public static void ApplyColor(GameObject target, Color color)
     {
-        if (!target.TryGetComponent(out MeshRenderer meshRenderer))
+        MeshRenderer meshRenderer = null;
+        Transform body = target.transform.Find("Body");
+        if (body != null)
+            body.TryGetComponent(out meshRenderer);
+
+        if (meshRenderer == null)
+            target.TryGetComponent(out meshRenderer);
+
+        if (meshRenderer == null)
             return;
 
         meshRenderer.material = CreateLitMaterial(color);
     }
+
+    /// <summary>Marcador de orientación a la altura de los pies (no tapa la cámara FPS).</summary>
+    public static Vector3 FacingMarkerLocalPosition => new Vector3(0f, -0.95f, 0.42f);
 
     static void CreateStaticBox(Transform parent, string name, Vector3 position, Vector3 scale, Color color)
     {

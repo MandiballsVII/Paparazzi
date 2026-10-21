@@ -39,13 +39,17 @@ public class NetworkPlayerController : NetworkBehaviour
     Transform faceIndicator;
 
     readonly SyncVar<int> colorIndex = new();
+    readonly SyncVar<bool> isCrouching = new();
 
     CharacterController controller;
     PlayerInput playerInput;
+    PlayerPauseMenu pauseMenu;
+    PlayerStance stance;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
     InputAction sprintAction;
+    InputAction crouchAction;
 
     Vector3 velocity;
     float yaw;
@@ -59,8 +63,11 @@ public class NetworkPlayerController : NetworkBehaviour
     {
         controller = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
+        EnsurePhotoSystems();
+        TryGetComponent(out pauseMenu);
         AlignCapsuleWithMesh();
         EnsureFaceIndicator();
+        EnsureStance();
 
         if (cameraPivot == null)
         {
@@ -69,7 +76,9 @@ public class NetworkPlayerController : NetworkBehaviour
                 cameraPivot = found;
         }
 
-        if (cameraPivot != null)
+        if (stance != null)
+            stance.Initialize(cameraPivot);
+        else if (cameraPivot != null)
             cameraPivot.localPosition = new Vector3(0f, 0.75f, 0f);
 
         if (playerCamera == null && cameraPivot != null)
@@ -108,7 +117,10 @@ public class NetworkPlayerController : NetworkBehaviour
         }
 
         if (faceIndicator != null)
+        {
+            faceIndicator.localPosition = ArenaBuilder.FacingMarkerLocalPosition;
             return;
+        }
 
         GameObject face = GameObject.CreatePrimitive(PrimitiveType.Cube);
         face.name = "Face";
@@ -116,24 +128,32 @@ public class NetworkPlayerController : NetworkBehaviour
             Destroy(faceCollider);
 
         face.transform.SetParent(transform, false);
-        // Frente de la cabeza (cápsula centrada: cabeza ~ y 0.55).
-        face.transform.localPosition = new Vector3(0f, 0.35f, 0.42f);
+        // Marcador de orientación a la altura de los pies (no tapa la cámara).
+        face.transform.localPosition = ArenaBuilder.FacingMarkerLocalPosition;
         face.transform.localScale = new Vector3(0.35f, 0.22f, 0.12f);
         faceIndicator = face.transform;
 
         ArenaBuilder.ApplyColor(face, new Color(0.08f, 0.08f, 0.1f));
     }
 
+    void EnsureStance()
+    {
+        if (!TryGetComponent(out stance))
+            stance = gameObject.AddComponent<PlayerStance>();
+    }
+
     public override void OnStartNetwork()
     {
         base.OnStartNetwork();
         colorIndex.OnChange += OnColorIndexChanged;
+        isCrouching.OnChange += OnCrouchingChanged;
     }
 
     public override void OnStopNetwork()
     {
         base.OnStopNetwork();
         colorIndex.OnChange -= OnColorIndexChanged;
+        isCrouching.OnChange -= OnCrouchingChanged;
     }
 
     public override void OnStartServer()
@@ -148,6 +168,8 @@ public class NetworkPlayerController : NetworkBehaviour
     {
         base.OnStartClient();
         ApplyColor(colorIndex.Value);
+        if (stance != null)
+            stance.SetCrouching(isCrouching.Value);
 
         if (!IsOwner)
         {
@@ -198,8 +220,34 @@ public class NetworkPlayerController : NetworkBehaviour
             BindInput();
         }
 
+        if (TryGetComponent(out PlayerPhotoCapture capture))
+        {
+            capture.Initialize(playerCamera);
+            capture.BindInput();
+        }
+
+        if (pauseMenu != null)
+        {
+            pauseMenu.Initialize(playerCamera);
+            pauseMenu.BindPause();
+        }
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+    }
+
+    void EnsurePhotoSystems()
+    {
+        if (!TryGetComponent(out PlayerPhotoAlbum _))
+            gameObject.AddComponent<PlayerPhotoAlbum>();
+
+        if (!TryGetComponent(out PlayerPhotoCapture _))
+            gameObject.AddComponent<PlayerPhotoCapture>();
+
+        if (!TryGetComponent(out PlayerPauseMenu menu))
+            menu = gameObject.AddComponent<PlayerPauseMenu>();
+
+        pauseMenu = menu;
     }
 
     void BindInput()
@@ -211,6 +259,7 @@ public class NetworkPlayerController : NetworkBehaviour
         lookAction = playerInput.actions["Look"];
         jumpAction = playerInput.actions["Jump"];
         sprintAction = playerInput.actions["Sprint"];
+        crouchAction = playerInput.actions["Crouch"];
         jumpAction.performed += OnJump;
         inputBound = true;
     }
@@ -237,19 +286,31 @@ public class NetworkPlayerController : NetworkBehaviour
         if (!IsOwner)
             return;
 
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-        }
-        else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-        {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-        }
+        if (pauseMenu != null && pauseMenu.IsOpen)
+            return;
 
+        UpdateCrouch();
         Look();
         Move();
+    }
+
+    void UpdateCrouch()
+    {
+        if (crouchAction == null || stance == null)
+            return;
+
+        bool wantCrouch = crouchAction.IsPressed();
+        if (wantCrouch == stance.IsCrouching && wantCrouch == isCrouching.Value)
+            return;
+
+        bool before = stance.IsCrouching;
+        stance.SetCrouching(wantCrouch);
+        // Si no puede levantarse (techo), no mandamos el SyncVar.
+        if (stance.IsCrouching == before && wantCrouch != before)
+            return;
+
+        if (stance.IsCrouching != isCrouching.Value)
+            SetCrouchingServerRpc(stance.IsCrouching);
     }
 
     void Look()
@@ -285,10 +346,14 @@ public class NetworkPlayerController : NetworkBehaviour
         if (wish.sqrMagnitude > 1f)
             wish.Normalize();
 
-        float speed = sprintAction.IsPressed() ? sprintSpeed : walkSpeed;
+        bool crouching = stance != null && stance.IsCrouching;
+        float speed = (!crouching && sprintAction.IsPressed()) ? sprintSpeed : walkSpeed;
+        if (stance != null)
+            speed *= stance.MoveMultiplier;
+
         controller.Move(wish * speed * Time.deltaTime);
 
-        if (jumpQueued && grounded)
+        if (jumpQueued && grounded && !crouching)
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
         jumpQueued = false;
@@ -322,6 +387,22 @@ public class NetworkPlayerController : NetworkBehaviour
             return;
 
         body.AddForce(force, ForceMode.Impulse);
+    }
+
+    [ServerRpc]
+    void SetCrouchingServerRpc(bool crouch)
+    {
+        isCrouching.Value = crouch;
+    }
+
+    void OnCrouchingChanged(bool prev, bool next, bool asServer)
+    {
+        if (stance == null)
+            TryGetComponent(out stance);
+
+        // ignoreCeiling: la autoridad del techo la tiene el owner al enviar el Rpc.
+        if (stance != null)
+            stance.SetCrouching(next, ignoreCeiling: true);
     }
 
     void OnColorIndexChanged(int prev, int next, bool asServer)

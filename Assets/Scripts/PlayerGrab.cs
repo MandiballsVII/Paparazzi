@@ -4,12 +4,29 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(PlayerInput))]
 public class PlayerGrab : MonoBehaviour
 {
-    [SerializeField] float grabDistance = 3f;
-    [SerializeField] float holdDistance = 1.8f;
-    [SerializeField] float throwForce = 12f;
-    [SerializeField] float maxGrabMass = 25f;
+    [SerializeField]
+    float grabDistance = 3f;
+
+    [SerializeField]
+    float holdDistance = 1.8f;
+
+    [SerializeField]
+    float moveThrowThreshold = 0.75f; // por debajo = dejar en el suelo
+
+    [SerializeField]
+    float throwSpeedFactor = 2.5f; // multiplica la velocidad al lanzar
+
+    [SerializeField]
+    float minThrowForce = 4f; // suelo del impulso si te mueves
+
+    [SerializeField]
+    float maxThrowForce = 18f; // techo
+
+    [SerializeField]
+    float maxGrabMass = 25f;
 
     PlayerInput playerInput;
+    PlayerPauseMenu pauseMenu;
     Camera playerCamera;
     CharacterController controller;
     InputAction grabAction;
@@ -27,13 +44,13 @@ public class PlayerGrab : MonoBehaviour
     {
         playerInput = GetComponent<PlayerInput>();
         TryGetComponent(out controller);
+        TryGetComponent(out pauseMenu);
     }
 
     void OnEnable()
     {
         grabAction = playerInput.actions["Interact"];
         grabAction.performed += OnGrabPressed;
-        playerInput.actions["Attack"].performed += OnThrowPressed;
     }
 
     void OnDisable()
@@ -41,30 +58,51 @@ public class PlayerGrab : MonoBehaviour
         if (grabAction != null)
             grabAction.performed -= OnGrabPressed;
 
-        if (playerInput != null && playerInput.actions != null)
-            playerInput.actions["Attack"].performed -= OnThrowPressed;
-
         Drop(Vector3.zero);
     }
 
+    bool IsMenuOpen()
+    {
+        if (pauseMenu == null)
+            TryGetComponent(out pauseMenu);
+        return pauseMenu != null && pauseMenu.IsOpen;
+    }
+
     void OnGrabPressed(InputAction.CallbackContext context)
-    {
-        if (heldBody != null)
-            Drop(Vector3.zero);
-        else
-            TryGrab();
-    }
+{
+    if (IsMenuOpen())
+        return;
 
-    void OnThrowPressed(InputAction.CallbackContext context)
-    {
-        if (heldBody == null)
-            return;
+    if (heldBody != null)
+        Drop(CalculateReleaseImpulse());
+    else
+        TryGrab();
+}
 
-        Drop(playerCamera.transform.forward * throwForce);
-    }
+Vector3 CalculateReleaseImpulse()
+{
+    if (controller == null || playerCamera == null)
+        return Vector3.zero;
+
+    Vector3 planar = controller.velocity;
+    planar.y = 0f;
+    float speed = planar.magnitude;
+
+    // Quieto → sin impulso (cae delante, donde ya lo tienes en holdDistance)
+    if (speed < moveThrowThreshold)
+        return Vector3.zero;
+
+    // En movimiento → lanzas hacia donde miras, más lejos cuanto más rápido vas
+    float strength = Mathf.Clamp(speed * throwSpeedFactor, minThrowForce, maxThrowForce);
+    return playerCamera.transform.forward * strength;
+}
+
 
     void LateUpdate()
     {
+        if (IsMenuOpen())
+            return;
+
         if (heldBody == null || playerCamera == null)
             return;
 

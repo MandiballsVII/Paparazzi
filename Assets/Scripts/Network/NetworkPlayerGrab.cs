@@ -7,19 +7,37 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(PlayerInput))]
 public class NetworkPlayerGrab : NetworkBehaviour
 {
-    [SerializeField] float grabDistance = 3f;
-    [SerializeField] float holdDistance = 1.8f;
-    [SerializeField] float throwForce = 12f;
-    [SerializeField] float maxGrabMass = 25f;
-    [SerializeField] Camera playerCamera;
+    [SerializeField]
+    float grabDistance = 3f;
+
+    [SerializeField]
+    float holdDistance = 1.8f;
+
+    [SerializeField]
+    float moveThrowThreshold = 0.75f; // por debajo = dejar en el suelo
+
+    [SerializeField]
+    float throwSpeedFactor = 2.5f; // multiplica la velocidad al lanzar
+
+    [SerializeField]
+    float minThrowForce = 4f; // suelo del impulso si te mueves
+
+    [SerializeField]
+    float maxThrowForce = 18f; // techo
+
+    [SerializeField]
+    float maxGrabMass = 25f;
+
+    [SerializeField]
+    Camera playerCamera;
 
     readonly SyncVar<bool> isHolding = new();
     readonly SyncVar<NetworkObject> heldSync = new();
 
     PlayerInput playerInput;
+    PlayerPauseMenu pauseMenu;
     CharacterController controller;
     InputAction grabAction;
-    InputAction throwAction;
     bool inputBound;
 
     NetworkObject heldObject;
@@ -31,6 +49,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
     {
         playerInput = GetComponent<PlayerInput>();
         TryGetComponent(out controller);
+        TryGetComponent(out pauseMenu);
 
         if (playerCamera == null)
         {
@@ -61,9 +80,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
             return;
 
         grabAction = playerInput.actions["Interact"];
-        throwAction = playerInput.actions["Attack"];
         grabAction.performed += OnGrabPressed;
-        throwAction.performed += OnThrowPressed;
         inputBound = true;
     }
 
@@ -74,45 +91,54 @@ public class NetworkPlayerGrab : NetworkBehaviour
 
         if (grabAction != null)
             grabAction.performed -= OnGrabPressed;
-        if (throwAction != null)
-            throwAction.performed -= OnThrowPressed;
         inputBound = false;
     }
 
     void OnGrabPressed(InputAction.CallbackContext context)
+{
+    if (!IsOwner)
+        return;
+
+    if (pauseMenu != null && pauseMenu.IsOpen)
+        return;
+
+    if (isHolding.Value)
     {
-        if (!IsOwner)
-            return;
-
-        if (isHolding.Value)
-        {
-            DropServerRpc(Vector3.zero);
-            return;
-        }
-
-        if (playerCamera == null)
-            return;
-
-        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-        if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance))
-            return;
-
-        if (!hit.rigidbody || hit.rigidbody.mass > maxGrabMass)
-            return;
-
-        if (!hit.rigidbody.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
-            return;
-
-        GrabServerRpc(nob);
+        DropServerRpc(CalculateReleaseImpulse());
+        return;
     }
 
-    void OnThrowPressed(InputAction.CallbackContext context)
-    {
-        if (!IsOwner || !isHolding.Value || playerCamera == null)
-            return;
+    if (playerCamera == null)
+        return;
 
-        DropServerRpc(playerCamera.transform.forward * throwForce);
-    }
+    Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+    if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance))
+        return;
+
+    if (!hit.rigidbody || hit.rigidbody.mass > maxGrabMass)
+        return;
+
+    if (!hit.rigidbody.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
+        return;
+
+    GrabServerRpc(nob);
+}
+
+Vector3 CalculateReleaseImpulse()
+{
+    if (controller == null || playerCamera == null)
+        return Vector3.zero;
+
+    Vector3 planar = controller.velocity;
+    planar.y = 0f;
+    float speed = planar.magnitude;
+
+    if (speed < moveThrowThreshold)
+        return Vector3.zero;
+
+    float strength = Mathf.Clamp(speed * throwSpeedFactor, minThrowForce, maxThrowForce);
+    return playerCamera.transform.forward * strength;
+}
 
     [ServerRpc]
     void GrabServerRpc(NetworkObject target, NetworkConnection caller = null)
@@ -190,6 +216,9 @@ public class NetworkPlayerGrab : NetworkBehaviour
     void LateUpdate()
     {
         if (!IsOwner || !isHolding.Value)
+            return;
+
+        if (pauseMenu != null && pauseMenu.IsOpen)
             return;
 
         if (!TryGetHoldPose(out Vector3 pos, out Quaternion rot))

@@ -44,9 +44,8 @@ public class MainMenuController : MonoBehaviour
 
         if (FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
         {
-            var eventSystem = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem),
+            new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem),
                 typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
-            DontDestroyOnLoad(eventSystem);
         }
 
         CreateLabel(canvasGo.transform, "Co-op Prototype", new Vector2(0f, 320f), 48);
@@ -60,8 +59,9 @@ public class MainMenuController : MonoBehaviour
 
         CreateButton(canvasGo.transform, "IP: mismo PC", new Vector2(-120f, -140f), OnFillLocalhostClicked, new Vector2(200f, 44f));
         CreateButton(canvasGo.transform, "IP: LAN (pegar host)", new Vector2(120f, -140f), OnFillLanHintClicked, new Vector2(220f, 44f));
+        CreateButton(canvasGo.transform, "Salir del juego", new Vector2(0f, -210f), OnQuitClicked, new Vector2(460f, 52f));
 
-        hintText = CreateLabel(canvasGo.transform, BuildHintText(), new Vector2(0f, -220f), 16);
+        hintText = CreateLabel(canvasGo.transform, BuildHintText(), new Vector2(0f, -300f), 16);
         RectTransform hintRect = hintText.rectTransform;
         hintRect.sizeDelta = new Vector2(1100f, 90f);
     }
@@ -243,5 +243,10 @@ public class MainMenuController : MonoBehaviour
         GameSessionConfig.SetClient(address);
         SetStatus($"Conectando a {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}...");
         SceneManager.LoadScene(GameplaySceneName);
+    }
+
+    public void OnQuitClicked()
+    {
+        MatchSessionExit.QuitGame();
     }
 }

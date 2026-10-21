@@ -16,10 +16,13 @@ public class PlayerMovement : MonoBehaviour
 
     CharacterController controller;
     PlayerInput playerInput;
+    PlayerPauseMenu pauseMenu;
+    PlayerStance stance;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
     InputAction sprintAction;
+    InputAction crouchAction;
 
     Vector3 velocity;
     float yaw;
@@ -33,12 +36,18 @@ public class PlayerMovement : MonoBehaviour
         cameraPivot = pivot;
         PlayerCamera = camera;
         yaw = transform.eulerAngles.y;
+
+        if (!TryGetComponent(out stance))
+            stance = gameObject.AddComponent<PlayerStance>();
+        stance.Initialize(pivot);
     }
 
     void Awake()
     {
         controller = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
+        TryGetComponent(out pauseMenu);
+        TryGetComponent(out stance);
     }
 
     void OnEnable()
@@ -48,6 +57,7 @@ public class PlayerMovement : MonoBehaviour
         lookAction = actions["Look"];
         jumpAction = actions["Jump"];
         sprintAction = actions["Sprint"];
+        crouchAction = actions["Crouch"];
         jumpAction.performed += OnJump;
     }
 
@@ -64,8 +74,25 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
+        if (pauseMenu == null)
+            TryGetComponent(out pauseMenu);
+
+        if (pauseMenu != null && pauseMenu.IsOpen)
+            return;
+
+        UpdateCrouch();
         Look();
         Move();
+    }
+
+    void UpdateCrouch()
+    {
+        if (stance == null)
+            TryGetComponent(out stance);
+        if (stance == null || crouchAction == null)
+            return;
+
+        stance.SetCrouching(crouchAction.IsPressed());
     }
 
     void Look()
@@ -96,10 +123,14 @@ public class PlayerMovement : MonoBehaviour
         if (wish.sqrMagnitude > 1f)
             wish.Normalize();
 
-        float speed = sprintAction.IsPressed() ? sprintSpeed : walkSpeed;
+        bool crouching = stance != null && stance.IsCrouching;
+        float speed = (!crouching && sprintAction.IsPressed()) ? sprintSpeed : walkSpeed;
+        if (stance != null)
+            speed *= stance.MoveMultiplier;
+
         controller.Move(wish * speed * Time.deltaTime);
 
-        if (jumpQueued && grounded)
+        if (jumpQueued && grounded && !crouching)
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
         jumpQueued = false;

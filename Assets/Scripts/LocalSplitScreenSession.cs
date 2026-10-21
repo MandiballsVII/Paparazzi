@@ -52,15 +52,7 @@ public class LocalSplitScreenSession : MonoBehaviour
             }
         }
 
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-        }
-        else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-        {
-            RefreshCursor();
-        }
+        RefreshCursor();
     }
 
     void TryJoinKeyboardMouse()
@@ -99,6 +91,8 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.camera = playerCamera;
         player.GetComponent<PlayerMovement>().Initialize(pivot, playerCamera);
         player.GetComponent<PlayerGrab>().Initialize(playerCamera);
+        player.GetComponent<PlayerPhotoCapture>().Initialize(playerCamera);
+        player.GetComponent<PlayerPauseMenu>().Initialize(playerCamera);
 
         player.gameObject.SetActive(true);
 
@@ -147,6 +141,12 @@ public class LocalSplitScreenSession : MonoBehaviour
 
     void RefreshCursor()
     {
+        for (int i = 0; i < players.Count; i++)
+        {
+            if (players[i].TryGetComponent(out PlayerPauseMenu menu) && menu.IsOpen)
+                return;
+        }
+
         bool mousePlayer = keyboardJoined;
         Cursor.lockState = mousePlayer ? CursorLockMode.Locked : CursorLockMode.None;
         Cursor.visible = !mousePlayer;
@@ -169,7 +169,7 @@ public class LocalSplitScreenSession : MonoBehaviour
         face.name = "Face";
         Destroy(face.GetComponent<Collider>());
         face.transform.SetParent(player.transform, false);
-        face.transform.localPosition = new Vector3(0f, 0.55f, 0.42f);
+        face.transform.localPosition = ArenaBuilder.FacingMarkerLocalPosition;
         face.transform.localScale = new Vector3(0.35f, 0.22f, 0.12f);
         ArenaBuilder.ApplyColor(face, new Color(0.08f, 0.08f, 0.1f));
 
@@ -198,11 +198,19 @@ public class LocalSplitScreenSession : MonoBehaviour
         input.camera = camera;
         input.neverAutoSwitchControlSchemes = true;
 
+        player.AddComponent<PlayerStance>();
+
         PlayerMovement movement = player.AddComponent<PlayerMovement>();
         movement.Initialize(cameraPivot, camera);
 
         PlayerGrab grab = player.AddComponent<PlayerGrab>();
         grab.Initialize(camera);
+
+        player.AddComponent<PlayerPhotoAlbum>();
+        PlayerPhotoCapture capture = player.AddComponent<PlayerPhotoCapture>();
+        capture.Initialize(camera);
+        PlayerPauseMenu pauseMenu = player.AddComponent<PlayerPauseMenu>();
+        pauseMenu.Initialize(camera);
 
         return player;
     }
@@ -213,9 +221,9 @@ public class LocalSplitScreenSession : MonoBehaviour
             return;
 
         GUI.color = Color.white;
-        GUI.Label(new Rect(16f, 12f, 700f, 80f),
-            "Local split-screen: teclado+ratón entra solo. Start en un mando para unir jugadores (máx. 4).\n" +
+        GUI.Label(new Rect(16f, 12f, 780f, 100f),
+            "Local split-screen: teclado+ratón entra solo. Start en un mando libre para unir jugadores (máx. 4).\n" +
             "WASD / palanca izq: mover  |  Ratón / palanca der: mirar  |  Espacio / A: saltar\n" +
-            "E / Y: coger o soltar  |  Clic izq / X: lanzar  |  Esc: liberar ratón");
+            "E / Y: coger/soltar  |  C: agachar  |  Click izq / RB: foto  |  Esc / Start: menú");
     }
 }
