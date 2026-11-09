@@ -13,14 +13,7 @@ public class OnlineArenaSpawner : MonoBehaviour
     NetworkObject physicsSpherePrefab;
 
     bool spawned;
-    GameObject staticArena;
     NetworkManager networkManager;
-
-    public void EnsureStaticArena()
-    {
-        if (staticArena == null)
-            staticArena = ArenaBuilder.BuildStaticArena();
-    }
 
     void OnEnable()
     {
@@ -60,8 +53,6 @@ public class OnlineArenaSpawner : MonoBehaviour
             );
             return;
         }
-
-        EnsureStaticArena();
 
         SpawnBox(new Vector3(-2f, 0.6f, 0f), Vector3.one, 2.5f, new Color(0.85f, 0.45f, 0.15f));
         SpawnBox(

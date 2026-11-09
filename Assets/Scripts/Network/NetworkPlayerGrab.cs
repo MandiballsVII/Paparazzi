@@ -36,6 +36,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
 
     PlayerInput playerInput;
     PlayerPauseMenu pauseMenu;
+    PlayerHealth health;
     CharacterController controller;
     InputAction grabAction;
     bool inputBound;
@@ -50,6 +51,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
         playerInput = GetComponent<PlayerInput>();
         TryGetComponent(out controller);
         TryGetComponent(out pauseMenu);
+        TryGetComponent(out health);
 
         if (playerCamera == null)
         {
@@ -95,34 +97,47 @@ public class NetworkPlayerGrab : NetworkBehaviour
     }
 
     void OnGrabPressed(InputAction.CallbackContext context)
-{
-    if (!IsOwner)
-        return;
-
-    if (pauseMenu != null && pauseMenu.IsOpen)
-        return;
-
-    if (isHolding.Value)
     {
-        DropServerRpc(CalculateReleaseImpulse());
-        return;
+        if (!IsOwner)
+            return;
+
+        if (pauseMenu != null && pauseMenu.IsOpen)
+            return;
+
+        if (health == null)
+            TryGetComponent(out health);
+        if (health != null && health.IsDead)
+            return;
+
+        if (isHolding.Value)
+        {
+            DropServerRpc(CalculateReleaseImpulse());
+            return;
+        }
+
+        if (playerCamera == null)
+            return;
+
+        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+        // Ignorar triggers (p.ej. ReviveZone); paredes/suelo sólidos siguen bloqueando.
+        if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            return;
+
+        if (!hit.rigidbody)
+            return;
+
+        bool isDeadPlayer = hit.rigidbody.TryGetComponent(out PlayerHealth targetHealth) && targetHealth.IsDead;
+        if (!isDeadPlayer && hit.rigidbody.mass > maxGrabMass)
+            return;
+
+        if (!hit.rigidbody.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
+            return;
+
+        if (nob == NetworkObject)
+            return;
+
+        GrabServerRpc(nob);
     }
-
-    if (playerCamera == null)
-        return;
-
-    Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-    if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance))
-        return;
-
-    if (!hit.rigidbody || hit.rigidbody.mass > maxGrabMass)
-        return;
-
-    if (!hit.rigidbody.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
-        return;
-
-    GrabServerRpc(nob);
-}
 
 Vector3 CalculateReleaseImpulse()
 {
@@ -146,7 +161,11 @@ Vector3 CalculateReleaseImpulse()
         if (target == null || !target.IsSpawned)
             return;
 
-        if (!target.TryGetComponent(out Rigidbody body) || body.mass > maxGrabMass)
+        if (!target.TryGetComponent(out Rigidbody body))
+            return;
+
+        bool isDeadPlayer = target.TryGetComponent(out PlayerHealth targetHealth) && targetHealth.IsDead;
+        if (!isDeadPlayer && body.mass > maxGrabMass)
             return;
 
         if (heldObject != null)
@@ -193,14 +212,23 @@ Vector3 CalculateReleaseImpulse()
             if (controller != null && heldCollider != null)
                 Physics.IgnoreCollision(controller, heldCollider, false);
 
-            body.isKinematic = wasKinematic;
-            body.useGravity = usedGravity;
-
-            if (!body.isKinematic && impulse.sqrMagnitude > 0f)
+            bool revivedPlayer = heldObject.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead;
+            if (revivedPlayer)
             {
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-                body.AddForce(impulse, ForceMode.VelocityChange);
+                body.isKinematic = true;
+                body.useGravity = false;
+            }
+            else
+            {
+                body.isKinematic = wasKinematic;
+                body.useGravity = usedGravity;
+
+                if (!body.isKinematic && impulse.sqrMagnitude > 0f)
+                {
+                    body.linearVelocity = Vector3.zero;
+                    body.angularVelocity = Vector3.zero;
+                    body.AddForce(impulse, ForceMode.VelocityChange);
+                }
             }
         }
 
@@ -220,6 +248,13 @@ Vector3 CalculateReleaseImpulse()
 
         if (pauseMenu != null && pauseMenu.IsOpen)
             return;
+
+        NetworkObject held = heldSync.Value;
+        if (held != null && held.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead)
+        {
+            DropServerRpc(Vector3.zero);
+            return;
+        }
 
         if (!TryGetHoldPose(out Vector3 pos, out Quaternion rot))
             return;

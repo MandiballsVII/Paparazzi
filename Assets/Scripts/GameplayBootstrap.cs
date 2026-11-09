@@ -62,8 +62,6 @@ public class GameplayBootstrap : MonoBehaviour
         if (networkManager == null)
             return;
 
-        onlineArenaSpawner?.EnsureStaticArena();
-
         bool serverStarted = networkManager.ServerManager.StartConnection(GameSessionConfig.DefaultPort);
         bool clientStarted = networkManager.ClientManager.StartConnection();
 
@@ -88,7 +86,6 @@ public class GameplayBootstrap : MonoBehaviour
         if (networkManager == null)
             return;
 
-        onlineArenaSpawner?.EnsureStaticArena();
         networkManager.ClientManager.OnClientConnectionState += OnClientConnectionState;
 
         bool started = networkManager.ClientManager.StartConnection(GameSessionConfig.JoinAddress, GameSessionConfig.DefaultPort);

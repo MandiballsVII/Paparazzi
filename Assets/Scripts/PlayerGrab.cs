@@ -27,6 +27,7 @@ public class PlayerGrab : MonoBehaviour
 
     PlayerInput playerInput;
     PlayerPauseMenu pauseMenu;
+    PlayerHealth health;
     Camera playerCamera;
     CharacterController controller;
     InputAction grabAction;
@@ -45,6 +46,7 @@ public class PlayerGrab : MonoBehaviour
         playerInput = GetComponent<PlayerInput>();
         TryGetComponent(out controller);
         TryGetComponent(out pauseMenu);
+        TryGetComponent(out health);
     }
 
     void OnEnable()
@@ -69,15 +71,20 @@ public class PlayerGrab : MonoBehaviour
     }
 
     void OnGrabPressed(InputAction.CallbackContext context)
-{
-    if (IsMenuOpen())
-        return;
+    {
+        if (IsMenuOpen())
+            return;
 
-    if (heldBody != null)
-        Drop(CalculateReleaseImpulse());
-    else
-        TryGrab();
-}
+        if (health == null)
+            TryGetComponent(out health);
+        if (health != null && health.IsDead)
+            return;
+
+        if (heldBody != null)
+            Drop(CalculateReleaseImpulse());
+        else
+            TryGrab();
+    }
 
 Vector3 CalculateReleaseImpulse()
 {
@@ -106,6 +113,13 @@ Vector3 CalculateReleaseImpulse()
         if (heldBody == null || playerCamera == null)
             return;
 
+        // Si el cadáver revive mientras lo cargas, suéltalo.
+        if (heldBody.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead)
+        {
+            Drop(Vector3.zero);
+            return;
+        }
+
         Transform cam = playerCamera.transform;
         Vector3 holdPoint = cam.position + cam.forward * holdDistance;
         heldBody.MovePosition(holdPoint);
@@ -116,11 +130,19 @@ Vector3 CalculateReleaseImpulse()
     void TryGrab()
     {
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-        if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance))
+        // Ignorar triggers (p.ej. ReviveZone); paredes/suelo sólidos siguen bloqueando.
+        if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
             return;
 
         Rigidbody body = hit.rigidbody;
-        if (body == null || body.mass > maxGrabMass)
+        if (body == null)
+            return;
+
+        // Props normales o jugadores muertos (ragdoll).
+        bool isDeadPlayer = body.TryGetComponent(out PlayerHealth targetHealth) && targetHealth.IsDead;
+        if (!isDeadPlayer && body.mass > maxGrabMass)
+            return;
+        if (isDeadPlayer && body.gameObject == gameObject)
             return;
 
         heldBody = body;
@@ -144,14 +166,24 @@ Vector3 CalculateReleaseImpulse()
             if (heldCollider != null && controller != null)
                 Physics.IgnoreCollision(controller, heldCollider, false);
 
-            heldBody.isKinematic = wasKinematic;
-            heldBody.useGravity = usedGravity;
-
-            if (!heldBody.isKinematic && impulse.sqrMagnitude > 0f)
+            bool revivedPlayer = heldBody.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead;
+            if (revivedPlayer)
             {
-                heldBody.linearVelocity = Vector3.zero;
-                heldBody.angularVelocity = Vector3.zero;
-                heldBody.AddForce(impulse, ForceMode.VelocityChange);
+                // PlayerRagdoll ya restauró el estado vivo; no reactivar física de cadáver.
+                heldBody.isKinematic = true;
+                heldBody.useGravity = false;
+            }
+            else
+            {
+                heldBody.isKinematic = wasKinematic;
+                heldBody.useGravity = usedGravity;
+
+                if (!heldBody.isKinematic && impulse.sqrMagnitude > 0f)
+                {
+                    heldBody.linearVelocity = Vector3.zero;
+                    heldBody.angularVelocity = Vector3.zero;
+                    heldBody.AddForce(impulse, ForceMode.VelocityChange);
+                }
             }
         }
 

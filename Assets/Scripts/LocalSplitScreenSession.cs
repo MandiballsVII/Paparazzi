@@ -21,8 +21,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         started = true;
         enabled = true;
 
-        GameObject arena = ArenaBuilder.BuildStaticArena();
-        ArenaBuilder.BuildLocalPhysicsProps(arena.transform);
+        // El escenario lo aporta la escena Gameplay; solo spawneamos props agarrables.
+        var propsRoot = new GameObject("PhysicsProps");
+        ArenaBuilder.BuildLocalPhysicsProps(propsRoot.transform);
         playerTemplate = CreatePlayerTemplate();
 
         if (Keyboard.current != null && Mouse.current != null)
@@ -93,6 +94,7 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.GetComponent<PlayerGrab>().Initialize(playerCamera);
         player.GetComponent<PlayerPhotoCapture>().Initialize(playerCamera);
         player.GetComponent<PlayerPauseMenu>().Initialize(playerCamera);
+        player.GetComponent<PlayerHealthHud>().Initialize(playerCamera);
 
         player.gameObject.SetActive(true);
 
@@ -199,6 +201,8 @@ public class LocalSplitScreenSession : MonoBehaviour
         input.neverAutoSwitchControlSchemes = true;
 
         player.AddComponent<PlayerStance>();
+        player.AddComponent<PlayerHealth>();
+        player.AddComponent<PlayerRagdoll>();
 
         PlayerMovement movement = player.AddComponent<PlayerMovement>();
         movement.Initialize(cameraPivot, camera);
@@ -212,6 +216,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         PlayerPauseMenu pauseMenu = player.AddComponent<PlayerPauseMenu>();
         pauseMenu.Initialize(camera);
 
+        PlayerHealthHud healthHud = player.AddComponent<PlayerHealthHud>();
+        healthHud.Initialize(camera);
+
         return player;
     }
 
@@ -221,9 +228,8 @@ public class LocalSplitScreenSession : MonoBehaviour
             return;
 
         GUI.color = Color.white;
-        GUI.Label(new Rect(16f, 12f, 780f, 100f),
-            "Local split-screen: teclado+ratón entra solo. Start en un mando libre para unir jugadores (máx. 4).\n" +
-            "WASD / palanca izq: mover  |  Ratón / palanca der: mirar  |  Espacio / A: saltar\n" +
-            "E / Y: coger/soltar  |  C: agachar  |  Click izq / RB: foto  |  Esc / Start: menú");
+        GUI.Label(new Rect(16f, Screen.height - 70f, 900f, 60f),
+            "Local: Start mando = unir  |  E = coger (también cadáveres)  |  C = agachar  |  Foto / Menú\n" +
+            "HUD vida arriba-izq de cada viewport. Botón daño test. Lleva muertos al vehículo (z+) para revivir.");
     }
 }

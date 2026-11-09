@@ -18,6 +18,7 @@ public class PlayerMovement : MonoBehaviour
     PlayerInput playerInput;
     PlayerPauseMenu pauseMenu;
     PlayerStance stance;
+    PlayerHealth health;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
@@ -48,6 +49,7 @@ public class PlayerMovement : MonoBehaviour
         playerInput = GetComponent<PlayerInput>();
         TryGetComponent(out pauseMenu);
         TryGetComponent(out stance);
+        TryGetComponent(out health);
     }
 
     void OnEnable()
@@ -76,6 +78,11 @@ public class PlayerMovement : MonoBehaviour
     {
         if (pauseMenu == null)
             TryGetComponent(out pauseMenu);
+        if (health == null)
+            TryGetComponent(out health);
+
+        if (health != null && health.IsDead)
+            return;
 
         if (pauseMenu != null && pauseMenu.IsOpen)
             return;

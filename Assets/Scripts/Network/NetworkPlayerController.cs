@@ -45,6 +45,7 @@ public class NetworkPlayerController : NetworkBehaviour
     PlayerInput playerInput;
     PlayerPauseMenu pauseMenu;
     PlayerStance stance;
+    PlayerHealth health;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
@@ -64,7 +65,9 @@ public class NetworkPlayerController : NetworkBehaviour
         controller = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
         EnsurePhotoSystems();
+        EnsureHealthSystems();
         TryGetComponent(out pauseMenu);
+        TryGetComponent(out health);
         AlignCapsuleWithMesh();
         EnsureFaceIndicator();
         EnsureStance();
@@ -232,6 +235,9 @@ public class NetworkPlayerController : NetworkBehaviour
             pauseMenu.BindPause();
         }
 
+        if (TryGetComponent(out PlayerHealthHud hud))
+            hud.Initialize(playerCamera);
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -248,6 +254,21 @@ public class NetworkPlayerController : NetworkBehaviour
             menu = gameObject.AddComponent<PlayerPauseMenu>();
 
         pauseMenu = menu;
+    }
+
+    void EnsureHealthSystems()
+    {
+        if (!TryGetComponent(out health))
+            health = gameObject.AddComponent<PlayerHealth>();
+
+        if (!TryGetComponent(out NetworkPlayerHealth _))
+            gameObject.AddComponent<NetworkPlayerHealth>();
+
+        if (!TryGetComponent(out PlayerRagdoll _))
+            gameObject.AddComponent<PlayerRagdoll>();
+
+        if (!TryGetComponent(out PlayerHealthHud _))
+            gameObject.AddComponent<PlayerHealthHud>();
     }
 
     void BindInput()
@@ -284,6 +305,11 @@ public class NetworkPlayerController : NetworkBehaviour
     void Update()
     {
         if (!IsOwner)
+            return;
+
+        if (health == null)
+            TryGetComponent(out health);
+        if (health != null && health.IsDead)
             return;
 
         if (pauseMenu != null && pauseMenu.IsOpen)

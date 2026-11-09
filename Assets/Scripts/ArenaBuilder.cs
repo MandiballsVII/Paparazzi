@@ -17,17 +17,53 @@ public static class ArenaBuilder
         return new Vector3(x, 1f, 6f);
     }
 
-    public static GameObject BuildStaticArena()
+    /// <summary>
+    /// Posición recomendada en Gameplay: lejos de props (x±4,z±3) y spawns (z≈6),
+    /// entrada (local -Z) mirando al centro de la arena. No pegado a paredes.
+    /// </summary>
+    public static readonly Vector3 EscapeVehicleScenePosition = new Vector3(0f, 0f, -12f);
+    public static readonly Quaternion EscapeVehicleSceneRotation = Quaternion.Euler(0f, 180f, 0f);
+
+    /// <summary>
+    /// Placeholder de furgoneta/camión (raíz en origen local): caja abierta por detrás + rampa.
+    /// Pensado para guardarse como prefab; la instancia en escena define posición/rotación.
+    /// </summary>
+    public static GameObject BuildEscapeVehicle(Transform parent = null)
     {
-        var root = new GameObject("Arena");
+        var vehicle = new GameObject("EscapeVehicle");
+        if (parent != null)
+            vehicle.transform.SetParent(parent, false);
+        vehicle.transform.localPosition = Vector3.zero;
+        vehicle.transform.localRotation = Quaternion.identity;
 
-        CreateStaticBox(root.transform, "Floor", new Vector3(0f, -0.25f, 0f), new Vector3(22f, 0.5f, 22f), new Color(0.35f, 0.35f, 0.38f));
-        CreateStaticBox(root.transform, "WallNorth", new Vector3(0f, 2f, 11f), new Vector3(22f, 4f, 0.4f), new Color(0.55f, 0.55f, 0.58f));
-        CreateStaticBox(root.transform, "WallSouth", new Vector3(0f, 2f, -11f), new Vector3(22f, 4f, 0.4f), new Color(0.55f, 0.55f, 0.58f));
-        CreateStaticBox(root.transform, "WallEast", new Vector3(11f, 2f, 0f), new Vector3(0.4f, 4f, 22f), new Color(0.55f, 0.55f, 0.58f));
-        CreateStaticBox(root.transform, "WallWest", new Vector3(-11f, 2f, 0f), new Vector3(0.4f, 4f, 22f), new Color(0.55f, 0.55f, 0.58f));
+        Color bodyColor = new Color(0.25f, 0.28f, 0.22f);
+        Color rampColor = new Color(0.4f, 0.32f, 0.18f);
+        Color cabinColor = new Color(0.2f, 0.22f, 0.35f);
 
-        return root;
+        CreateStaticBoxLocal(vehicle.transform, "CargoFloor", new Vector3(0f, 0.55f, 0.5f), new Vector3(3.6f, 0.2f, 5.5f), bodyColor);
+        CreateStaticBoxLocal(vehicle.transform, "WallLeft", new Vector3(-1.9f, 1.7f, 0.5f), new Vector3(0.15f, 2.2f, 5.5f), bodyColor);
+        CreateStaticBoxLocal(vehicle.transform, "WallRight", new Vector3(1.9f, 1.7f, 0.5f), new Vector3(0.15f, 2.2f, 5.5f), bodyColor);
+        CreateStaticBoxLocal(vehicle.transform, "WallFront", new Vector3(0f, 1.7f, 3.2f), new Vector3(3.9f, 2.2f, 0.15f), bodyColor);
+        CreateStaticBoxLocal(vehicle.transform, "Roof", new Vector3(0f, 2.85f, 0.5f), new Vector3(3.9f, 0.12f, 5.5f), bodyColor);
+        CreateStaticBoxLocal(vehicle.transform, "Cabin", new Vector3(0f, 1.5f, 4.4f), new Vector3(3.2f, 1.8f, 1.8f), cabinColor);
+
+        // Rampa trasera (apertura en -Z local).
+        var ramp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ramp.name = "Ramp";
+        ramp.transform.SetParent(vehicle.transform, false);
+        ramp.transform.localPosition = new Vector3(0f, 0.35f, -2.8f);
+        ramp.transform.localRotation = Quaternion.Euler(-28f, 0f, 0f);
+        ramp.transform.localScale = new Vector3(3.2f, 0.12f, 3.2f);
+        ApplyColor(ramp, rampColor);
+
+        var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone));
+        zone.transform.SetParent(vehicle.transform, false);
+        zone.transform.localPosition = new Vector3(0f, 1.4f, 0.4f);
+        BoxCollider trigger = zone.GetComponent<BoxCollider>();
+        trigger.isTrigger = true;
+        trigger.size = new Vector3(3.2f, 2f, 4.5f);
+
+        return vehicle;
     }
 
     public static void BuildLocalPhysicsProps(Transform parent)
@@ -75,12 +111,13 @@ public static class ArenaBuilder
     /// <summary>Marcador de orientación a la altura de los pies (no tapa la cámara FPS).</summary>
     public static Vector3 FacingMarkerLocalPosition => new Vector3(0f, -0.95f, 0.42f);
 
-    static void CreateStaticBox(Transform parent, string name, Vector3 position, Vector3 scale, Color color)
+    static void CreateStaticBoxLocal(Transform parent, string name, Vector3 localPosition, Vector3 scale, Color color)
     {
         GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
         box.name = name;
-        box.transform.SetParent(parent);
-        box.transform.position = position;
+        box.transform.SetParent(parent, false);
+        box.transform.localPosition = localPosition;
+        box.transform.localRotation = Quaternion.identity;
         box.transform.localScale = scale;
         ApplyColor(box, color);
     }

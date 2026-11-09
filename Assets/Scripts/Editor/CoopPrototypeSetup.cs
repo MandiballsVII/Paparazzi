@@ -19,8 +19,48 @@ public static class CoopPrototypeSetup
     const string PlayerPrefabPath = PrefabFolder + "/NetworkPlayer.prefab";
     const string BoxPrefabPath = PrefabFolder + "/NetworkPhysicsBox.prefab";
     const string SpherePrefabPath = PrefabFolder + "/NetworkPhysicsSphere.prefab";
+    const string EscapeVehiclePrefabPath = PrefabFolder + "/EscapeVehicle.prefab";
     const string MainMenuPath = ScenesFolder + "/MainMenu.unity";
     const string GameplayPath = ScenesFolder + "/Gameplay.unity";
+
+    [MenuItem("Tools/Coop Prototype/Create Escape Vehicle Prefab And Place In Gameplay")]
+    public static void CreateEscapeVehiclePrefabAndPlace()
+    {
+        EnsureFolders();
+
+        GameObject vehicle = ArenaBuilder.BuildEscapeVehicle();
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(vehicle, EscapeVehiclePrefabPath);
+        Object.DestroyImmediate(vehicle);
+
+        Scene gameplay = EditorSceneManager.OpenScene(GameplayPath, OpenSceneMode.Single);
+
+        // Quitar instancias viejas (procedurales o prefab previos).
+        foreach (GameObject root in gameplay.GetRootGameObjects())
+        {
+            if (root.name == "EscapeVehicle" || root.name.StartsWith("EscapeVehicle"))
+                Object.DestroyImmediate(root);
+        }
+
+        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        instance.name = "EscapeVehicle";
+        instance.transform.SetPositionAndRotation(
+            ArenaBuilder.EscapeVehicleScenePosition,
+            ArenaBuilder.EscapeVehicleSceneRotation);
+
+        EditorSceneManager.MarkSceneDirty(gameplay);
+        EditorSceneManager.SaveScene(gameplay);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        Selection.activeGameObject = instance;
+        EditorUtility.DisplayDialog(
+            "Escape Vehicle",
+            "Prefab creado en Assets/Prefabs/EscapeVehicle.prefab\n\n" +
+            "Instancia en Gameplay en " + ArenaBuilder.EscapeVehicleScenePosition +
+            " (rot Y 180°, entrada hacia el centro).\n" +
+            "Puedes moverlo libremente en la escena.",
+            "OK");
+    }
 
     [MenuItem("Tools/Coop Prototype/Setup Prefabs And Scenes")]
     public static void SetupAll()
