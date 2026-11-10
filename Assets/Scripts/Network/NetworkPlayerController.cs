@@ -27,7 +27,13 @@ public class NetworkPlayerController : NetworkBehaviour
     float stickSensitivity = 120f;
 
     [SerializeField]
-    float pushPower = 3f;
+    float softPushAcceleration = 14f;
+
+    [SerializeField]
+    float maxSoftPushSpeed = 3f;
+
+    [SerializeField]
+    float playerSeparateSpeed = 3.5f;
 
     [SerializeField]
     Transform cameraPivot;
@@ -46,6 +52,7 @@ public class NetworkPlayerController : NetworkBehaviour
     PlayerPauseMenu pauseMenu;
     PlayerStance stance;
     PlayerHealth health;
+    NetworkPlayerGrab grab;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
@@ -68,6 +75,7 @@ public class NetworkPlayerController : NetworkBehaviour
         EnsureHealthSystems();
         TryGetComponent(out pauseMenu);
         TryGetComponent(out health);
+        TryGetComponent(out grab);
         AlignCapsuleWithMesh();
         EnsureFaceIndicator();
         EnsureStance();
@@ -318,6 +326,7 @@ public class NetworkPlayerController : NetworkBehaviour
         UpdateCrouch();
         Look();
         Move();
+        SeparateFromPlayers();
     }
 
     void UpdateCrouch()
@@ -350,12 +359,25 @@ public class NetworkPlayerController : NetworkBehaviour
             || playerInput.currentControlScheme == null;
         float scale = usingMouse ? mouseSensitivity : stickSensitivity * Time.deltaTime;
 
+        float previousYaw = yaw;
+        float previousPitch = pitch;
         yaw += look.x * scale;
         pitch -= look.y * scale;
         pitch = Mathf.Clamp(pitch, -85f, 85f);
 
         transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+
+        if (grab == null)
+            TryGetComponent(out grab);
+        if (grab != null && grab.IsHolding)
+            grab.ConstrainLook(ref yaw, ref pitch, previousYaw, previousPitch, transform, cameraPivot);
+    }
+
+    void SeparateFromPlayers()
+    {
+        float probe = controller.radius + 0.35f;
+        PlayerSoftPush.SeparateFromNearbyPlayers(controller, probe, playerSeparateSpeed, Time.deltaTime);
     }
 
     void Move()
@@ -399,20 +421,16 @@ public class NetworkPlayerController : NetworkBehaviour
         if (!body.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
             return;
 
-        Vector3 pushDir = new Vector3(hit.moveDirection.x, 0f, hit.moveDirection.z);
-        if (pushDir.sqrMagnitude < 0.001f)
-            return;
-
-        PushObjectServerRpc(nob, pushDir.normalized * pushPower);
+        SoftPushObjectServerRpc(nob, hit.point);
     }
 
     [ServerRpc]
-    void PushObjectServerRpc(NetworkObject target, Vector3 force)
+    void SoftPushObjectServerRpc(NetworkObject target, Vector3 fromPoint)
     {
         if (target == null || !target.TryGetComponent(out Rigidbody body) || body.isKinematic)
             return;
 
-        body.AddForce(force, ForceMode.Impulse);
+        PlayerSoftPush.SoftPushDynamicBody(body, fromPoint, softPushAcceleration, maxSoftPushSpeed);
     }
 
     [ServerRpc]

@@ -11,7 +11,9 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] float gravity = -20f;
     [SerializeField] float mouseSensitivity = 0.12f;
     [SerializeField] float stickSensitivity = 120f;
-    [SerializeField] float pushPower = 3f;
+    [SerializeField] float softPushAcceleration = 14f;
+    [SerializeField] float maxSoftPushSpeed = 3f;
+    [SerializeField] float playerSeparateSpeed = 3.5f;
     [SerializeField] Transform cameraPivot;
 
     CharacterController controller;
@@ -19,6 +21,7 @@ public class PlayerMovement : MonoBehaviour
     PlayerPauseMenu pauseMenu;
     PlayerStance stance;
     PlayerHealth health;
+    PlayerGrab grab;
     InputAction moveAction;
     InputAction lookAction;
     InputAction jumpAction;
@@ -50,6 +53,7 @@ public class PlayerMovement : MonoBehaviour
         TryGetComponent(out pauseMenu);
         TryGetComponent(out stance);
         TryGetComponent(out health);
+        TryGetComponent(out grab);
     }
 
     void OnEnable()
@@ -90,6 +94,7 @@ public class PlayerMovement : MonoBehaviour
         UpdateCrouch();
         Look();
         Move();
+        SeparateFromPlayers();
     }
 
     void UpdateCrouch()
@@ -111,12 +116,19 @@ public class PlayerMovement : MonoBehaviour
         bool usingMouse = playerInput.currentControlScheme == "Keyboard&Mouse";
         float scale = usingMouse ? mouseSensitivity : stickSensitivity * Time.deltaTime;
 
+        float previousYaw = yaw;
+        float previousPitch = pitch;
         yaw += look.x * scale;
         pitch -= look.y * scale;
         pitch = Mathf.Clamp(pitch, -85f, 85f);
 
         transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+
+        if (grab == null)
+            TryGetComponent(out grab);
+        if (grab != null && grab.IsHolding)
+            grab.ConstrainLook(ref yaw, ref pitch, previousYaw, previousPitch, transform, cameraPivot);
     }
 
     void Move()
@@ -145,6 +157,12 @@ public class PlayerMovement : MonoBehaviour
         controller.Move(velocity * Time.deltaTime);
     }
 
+    void SeparateFromPlayers()
+    {
+        float probe = controller.radius + 0.35f;
+        PlayerSoftPush.SeparateFromNearbyPlayers(controller, probe, playerSeparateSpeed, Time.deltaTime);
+    }
+
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
         Rigidbody body = hit.rigidbody;
@@ -152,6 +170,13 @@ public class PlayerMovement : MonoBehaviour
             return;
 
         Vector3 pushDir = new Vector3(hit.moveDirection.x, 0f, hit.moveDirection.z);
-        body.AddForce(pushDir * pushPower, ForceMode.Impulse);
+        if (pushDir.sqrMagnitude < 0.0001f)
+            return;
+
+        PlayerSoftPush.SoftPushDynamicBody(
+            body,
+            hit.point,
+            softPushAcceleration,
+            maxSoftPushSpeed);
     }
 }
