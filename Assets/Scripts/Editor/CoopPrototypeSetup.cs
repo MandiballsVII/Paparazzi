@@ -135,6 +135,8 @@ public static class CoopPrototypeSetup
 
         NetworkPlayerController movement = player.AddComponent<NetworkPlayerController>();
         NetworkPlayerGrab grab = player.AddComponent<NetworkPlayerGrab>();
+        player.AddComponent<PerceptionTarget>();
+        player.AddComponent<FootstepNoiseEmitter>();
 
         SerializedObject movementSo = new SerializedObject(movement);
         movementSo.FindProperty("cameraPivot").objectReferenceValue = cameraPivot.transform;
@@ -160,6 +162,8 @@ public static class CoopPrototypeSetup
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
         go.AddComponent<PropNavMeshObstacle>();
+        go.AddComponent<ImpactNoiseEmitter>();
+        go.AddComponent<NetworkPhysicsProp>();
 
         go.AddComponent<NetworkObject>();
         NetworkTransform nt = go.AddComponent<NetworkTransform>();

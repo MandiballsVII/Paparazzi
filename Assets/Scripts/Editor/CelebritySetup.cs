@@ -43,11 +43,17 @@ public static class CelebritySetup
                 continue;
             if (rb.GetComponentInParent<NavMeshAgent>() != null)
                 continue;
-            if (rb.TryGetComponent(out PropNavMeshObstacle _))
-                continue;
+            if (!rb.TryGetComponent(out PropNavMeshObstacle _))
+            {
+                rb.gameObject.AddComponent<PropNavMeshObstacle>();
+                updated++;
+            }
 
-            rb.gameObject.AddComponent<PropNavMeshObstacle>();
-            updated++;
+            if (!rb.TryGetComponent(out ImpactNoiseEmitter _))
+            {
+                rb.gameObject.AddComponent<ImpactNoiseEmitter>();
+                updated++;
+            }
             EditorUtility.SetDirty(rb.gameObject);
         }
 
@@ -66,10 +72,19 @@ public static class CelebritySetup
             return false;
 
         bool changed = false;
-        if (prefabRoot.GetComponent<Rigidbody>() != null && prefabRoot.GetComponent<PropNavMeshObstacle>() == null)
+        if (prefabRoot.GetComponent<Rigidbody>() != null)
         {
-            prefabRoot.AddComponent<PropNavMeshObstacle>();
-            changed = true;
+            if (prefabRoot.GetComponent<PropNavMeshObstacle>() == null)
+            {
+                prefabRoot.AddComponent<PropNavMeshObstacle>();
+                changed = true;
+            }
+
+            if (prefabRoot.GetComponent<ImpactNoiseEmitter>() == null)
+            {
+                prefabRoot.AddComponent<ImpactNoiseEmitter>();
+                changed = true;
+            }
         }
 
         if (changed)
@@ -229,7 +244,81 @@ public static class CelebritySetup
         agent.obstacleAvoidanceType = ObstacleAvoidanceType.MedQualityObstacleAvoidance;
 
         root.AddComponent<CelebrityPatrol>();
+        EnsureCelebrityPerception(root);
         return root;
+    }
+
+    [MenuItem("Tools/Paparazzi/Ensure Celebrity Perception")]
+    public static void EnsureCelebrityPerceptionMenu()
+    {
+        int updated = 0;
+        GameObject prefabRoot = PrefabUtility.LoadPrefabContents(CelebrityPrefabPath);
+        if (prefabRoot != null)
+        {
+            if (EnsureCelebrityPerception(prefabRoot))
+            {
+                PrefabUtility.SaveAsPrefabAsset(prefabRoot, CelebrityPrefabPath);
+                updated++;
+            }
+
+            PrefabUtility.UnloadPrefabContents(prefabRoot);
+        }
+
+        Scene scene = EnsureGameplayOpen();
+        foreach (GameObject root in scene.GetRootGameObjects())
+        {
+            if (root.name != "Celebrity" && !root.name.StartsWith("Celebrity"))
+                continue;
+            if (EnsureCelebrityPerception(root))
+            {
+                EditorUtility.SetDirty(root);
+                updated++;
+            }
+        }
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[CelebritySetup] Perception actualizada en {updated} objeto(s).");
+        EditorUtility.DisplayDialog("Celebrity Perception", $"Componentes de percepción listos ({updated}).", "OK");
+    }
+
+    /// <returns>True si se añadió o modificó algo.</returns>
+    public static bool EnsureCelebrityPerception(GameObject root)
+    {
+        if (root == null)
+            return false;
+
+        bool changed = false;
+
+        if (!root.TryGetComponent(out PerceptionAgent agent))
+        {
+            agent = root.AddComponent<PerceptionAgent>();
+            changed = true;
+        }
+
+        if (!root.TryGetComponent(out VisionSensor _))
+        {
+            root.AddComponent<VisionSensor>();
+            changed = true;
+        }
+
+        if (!root.TryGetComponent(out HearingSensor _))
+        {
+            root.AddComponent<HearingSensor>();
+            changed = true;
+        }
+
+        // Defaults del famoso: ve y oye, con logs para el prototipo.
+        SerializedObject so = new SerializedObject(agent);
+        SerializedProperty log = so.FindProperty("logDetections");
+        if (log != null && !log.boolValue)
+        {
+            log.boolValue = true;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            changed = true;
+        }
+
+        return changed;
     }
 
     static Scene EnsureGameplayOpen()

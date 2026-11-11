@@ -136,6 +136,7 @@ public static class ArenaBuilder
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
         box.AddComponent<PropNavMeshObstacle>();
+        box.AddComponent<ImpactNoiseEmitter>();
     }
 
     static void CreateLocalPhysicsSphere(Transform parent, Vector3 position, float radius, float mass, Color color)
@@ -152,6 +153,7 @@ public static class ArenaBuilder
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
         sphere.AddComponent<PropNavMeshObstacle>();
+        sphere.AddComponent<ImpactNoiseEmitter>();
     }
 }
 

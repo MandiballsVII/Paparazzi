@@ -203,6 +203,8 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.AddComponent<PlayerStance>();
         player.AddComponent<PlayerHealth>();
         player.AddComponent<PlayerRagdoll>();
+        player.AddComponent<PerceptionTarget>();
+        player.AddComponent<FootstepNoiseEmitter>();
 
         PlayerMovement movement = player.AddComponent<PlayerMovement>();
         movement.Initialize(cameraPivot, camera);

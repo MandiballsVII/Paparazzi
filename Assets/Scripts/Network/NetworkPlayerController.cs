@@ -73,6 +73,7 @@ public class NetworkPlayerController : NetworkBehaviour
         playerInput = GetComponent<PlayerInput>();
         EnsurePhotoSystems();
         EnsureHealthSystems();
+        EnsurePerceptionEmitters();
         TryGetComponent(out pauseMenu);
         TryGetComponent(out health);
         TryGetComponent(out grab);
@@ -151,6 +152,15 @@ public class NetworkPlayerController : NetworkBehaviour
     {
         if (!TryGetComponent(out stance))
             stance = gameObject.AddComponent<PlayerStance>();
+    }
+
+    void EnsurePerceptionEmitters()
+    {
+        if (!TryGetComponent(out PerceptionTarget _))
+            gameObject.AddComponent<PerceptionTarget>();
+
+        if (!TryGetComponent(out FootstepNoiseEmitter _))
+            gameObject.AddComponent<FootstepNoiseEmitter>();
     }
 
     public override void OnStartNetwork()

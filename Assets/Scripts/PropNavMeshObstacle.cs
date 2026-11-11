@@ -20,6 +20,9 @@ public class PropNavMeshObstacle : MonoBehaviour
         if (!TryGetComponent(out obstacle))
             obstacle = gameObject.AddComponent<NavMeshObstacle>();
 
+        if (!TryGetComponent(out ImpactNoiseEmitter _))
+            gameObject.AddComponent<ImpactNoiseEmitter>();
+
         obstacle.shape = NavMeshObstacleShape.Box;
         obstacle.carving = true;
         obstacle.carveOnlyStationary = !carveWhileMoving;

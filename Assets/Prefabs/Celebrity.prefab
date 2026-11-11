@@ -125,6 +125,9 @@ GameObject:
   - component: {fileID: 6419653076477758314}
   - component: {fileID: 7232810217327493953}
   - component: {fileID: 3705061575888859331}
+  - component: {fileID: 8391079537816019841}
+  - component: {fileID: 2177595524074272860}
+  - component: {fileID: 1162427548081578652}
   m_Layer: 0
   m_Name: Celebrity
   m_TagString: Untagged
@@ -187,3 +190,67 @@ MonoBehaviour:
   waitAtPointMax: 2.5
   sampleAttempts: 24
   roamFromSpawn: 1
+  obstacleProbePadding: 0.45
+  repathCooldown: 0.35
+  propPushAcceleration: 22
+  propMaxPushSpeed: 4
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+--- !u!114 &8391079537816019841
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2028195186351332626}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 621dd7980c928aa4db2679589773f95a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PerceptionAgent
+  hasVision: 1
+  hasHearing: 1
+  logDetections: 1
+  knowledgeStaleSeconds: 8
+--- !u!114 &2177595524074272860
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2028195186351332626}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de5f82027a63d534fb0beab884a0ff99, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VisionSensor
+  visionEnabled: 1
+  viewDistance: 18
+  fieldOfView: 90
+  eyeHeight: 2.4
+  scanInterval: 0.15
+  occlusionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+--- !u!114 &1162427548081578652
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2028195186351332626}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c2031a7b0ea8d04fb216eb9acab3f97, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HearingSensor
+  hearingEnabled: 1
+  sensitivity: 1
+  metersPerLoudness: 12
+  minDetectableLoudness: 0.05
+  wallAttenuation: 0.55
+  wallMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  earHeight: 1.6

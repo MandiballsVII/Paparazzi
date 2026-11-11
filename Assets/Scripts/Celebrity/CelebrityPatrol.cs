@@ -52,6 +52,14 @@ public class CelebrityPatrol : MonoBehaviour
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
+
+        // Percepción: si el prefab aún no tiene componentes, se añaden en runtime.
+        if (!TryGetComponent(out PerceptionAgent perception))
+        {
+            perception = gameObject.AddComponent<PerceptionAgent>();
+            perception.VisionLogDetections = true;
+            perception.HearingLogDetections = true;
+        }
     }
 
     void OnEnable()
