@@ -159,6 +159,7 @@ public static class CoopPrototypeSetup
         body.mass = mass;
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
+        go.AddComponent<PropNavMeshObstacle>();
 
         go.AddComponent<NetworkObject>();
         NetworkTransform nt = go.AddComponent<NetworkTransform>();

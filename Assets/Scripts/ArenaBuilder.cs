@@ -135,6 +135,7 @@ public static class ArenaBuilder
         body.mass = mass;
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
+        box.AddComponent<PropNavMeshObstacle>();
     }
 
     static void CreateLocalPhysicsSphere(Transform parent, Vector3 position, float radius, float mass, Color color)
@@ -150,5 +151,7 @@ public static class ArenaBuilder
         body.mass = mass;
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.Continuous;
+        sphere.AddComponent<PropNavMeshObstacle>();
     }
 }
+

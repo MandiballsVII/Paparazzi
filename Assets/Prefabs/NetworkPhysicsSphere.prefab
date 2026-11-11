@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 7109411987673225002}
   - component: {fileID: 9052798331359035512}
   - component: {fileID: 8397982168465193199}
+  - component: {fileID: 1527373204207327896}
   m_Layer: 0
   m_Name: NetworkPhysicsSphere
   m_TagString: Untagged
@@ -263,3 +264,16 @@ MonoBehaviour:
   _componentIndexCache: 1
   _addedNetworkObject: {fileID: 7109411987673225002}
   _networkObjectCache: {fileID: 7109411987673225002}
+--- !u!114 &1527373204207327896
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6556056291800868625}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ccf8fc911e10b6429815b6fd9be201c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PropNavMeshObstacle
+  carveWhileMoving: 1
