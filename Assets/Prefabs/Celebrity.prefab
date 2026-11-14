@@ -128,6 +128,7 @@ GameObject:
   - component: {fileID: 8391079537816019841}
   - component: {fileID: 2177595524074272860}
   - component: {fileID: 1162427548081578652}
+  - component: {fileID: 4692750341117906441}
   m_Layer: 0
   m_Name: Celebrity
   m_TagString: Untagged
@@ -211,7 +212,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PerceptionAgent
   hasVision: 1
   hasHearing: 1
-  logDetections: 1
+  visionLogDetections: 0
+  hearingLogDetections: 0
   knowledgeStaleSeconds: 8
 --- !u!114 &2177595524074272860
 MonoBehaviour:
@@ -254,3 +256,34 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   earHeight: 1.6
+--- !u!114 &4692750341117906441
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2028195186351332626}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f1ad7536fb7a0c04fb8df0fc0e232c5a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CelebrityBrain
+  actionCooldownMin: 90
+  actionCooldownMax: 180
+  actionDurationMin: 5
+  actionDurationMax: 10
+  listenIdleDuration: 8
+  listenIgnoreNoiseSeconds: 2
+  fleeSpeed: 14
+  walkSpeed: 2.2
+  hideDurationMin: 10
+  hideDurationMax: 15
+  hideTeleportOffset: {x: 0, y: -50, z: 0}
+  fleeSampleAttempts: 48
+  fleeSearchRadius: 80
+  roamRadius: 25
+  waitAtPointMin: 0.5
+  waitAtPointMax: 2.5
+  sampleAttempts: 24
+  roamFromSpawn: 1
+  logStates: 1

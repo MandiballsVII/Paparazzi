@@ -245,6 +245,8 @@ public static class CelebritySetup
 
         root.AddComponent<CelebrityPatrol>();
         EnsureCelebrityPerception(root);
+        if (root.GetComponent<CelebrityBrain>() == null)
+            root.AddComponent<CelebrityBrain>();
         return root;
     }
 
@@ -308,12 +310,30 @@ public static class CelebritySetup
             changed = true;
         }
 
-        // Defaults del famoso: ve y oye, con logs para el prototipo.
-        SerializedObject so = new SerializedObject(agent);
-        SerializedProperty log = so.FindProperty("logDetections");
-        if (log != null && !log.boolValue)
+        if (root.GetComponent<CelebrityBrain>() == null)
         {
-            log.boolValue = true;
+            root.AddComponent<CelebrityBrain>();
+            changed = true;
+        }
+
+        SerializedObject so = new SerializedObject(agent);
+        SerializedProperty visionLog = so.FindProperty("visionLogDetections");
+        SerializedProperty hearingLog = so.FindProperty("hearingLogDetections");
+        bool logsChanged = false;
+        if (visionLog != null && !visionLog.boolValue)
+        {
+            visionLog.boolValue = true;
+            logsChanged = true;
+        }
+
+        if (hearingLog != null && !hearingLog.boolValue)
+        {
+            hearingLog.boolValue = true;
+            logsChanged = true;
+        }
+
+        if (logsChanged)
+        {
             so.ApplyModifiedPropertiesWithoutUndo();
             changed = true;
         }

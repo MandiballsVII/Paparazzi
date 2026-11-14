@@ -48,6 +48,21 @@ public class CelebrityPatrol : MonoBehaviour
     float nextRepathAllowedTime;
     bool bumpRequested;
     Vector3 bumpNormal = Vector3.forward;
+    bool brainControlled;
+
+    public float RoamRadius => roamRadius;
+    public bool RoamFromSpawn => roamFromSpawn;
+    public Vector3 RoamOrigin => roamOrigin;
+
+    public void SetBrainControlled(bool controlled)
+    {
+        brainControlled = controlled;
+        if (brainControlled && patrolRoutine != null)
+        {
+            StopCoroutine(patrolRoutine);
+            patrolRoutine = null;
+        }
+    }
 
     void Awake()
     {
@@ -60,12 +75,22 @@ public class CelebrityPatrol : MonoBehaviour
             perception.VisionLogDetections = true;
             perception.HearingLogDetections = true;
         }
+
+        if (!TryGetComponent(out CelebrityBrain _))
+            gameObject.AddComponent<CelebrityBrain>();
     }
 
     void OnEnable()
     {
         roamOrigin = transform.position;
         bumpRequested = false;
+
+        if (brainControlled || TryGetComponent(out CelebrityBrain _))
+        {
+            brainControlled = true;
+            return;
+        }
+
         if (patrolRoutine != null)
             StopCoroutine(patrolRoutine);
         patrolRoutine = StartCoroutine(PatrolLoop());
@@ -77,6 +102,27 @@ public class CelebrityPatrol : MonoBehaviour
         {
             StopCoroutine(patrolRoutine);
             patrolRoutine = null;
+        }
+    }
+
+    public bool TryPickDestinationPublic(Vector3 preferAwayNormal, out Vector3 destination)
+        => TryPickDestination(preferAwayNormal, out destination);
+
+    /// <summary>Usado por CelebrityBrain mientras se mueve.</summary>
+    public void TickContactsWhileMoving()
+    {
+        if (agent == null || !agent.isOnNavMesh)
+            return;
+        if (Time.time < nextRepathAllowedTime)
+            return;
+        if (!TryResolveContacts(out Vector3 hitNormal))
+            return;
+
+        RequestBump(hitNormal);
+        if (TryPickDestination(bumpNormal, out Vector3 destination))
+        {
+            agent.ResetPath();
+            agent.SetDestination(destination);
         }
     }
 
