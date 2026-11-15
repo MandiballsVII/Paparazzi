@@ -96,6 +96,15 @@ public class PlayerGrab : MonoBehaviour
         if (health != null && health.IsDead)
             return;
 
+        // Prioridad: interactuables (botón finalizar ronda) sobre agarrar.
+        if (heldBody == null
+            && PlayerInteractUtility.TryGetInteractable(playerCamera, grabDistance, out IPlayerInteractable interactable, out _)
+            && interactable.CanInteract(gameObject))
+        {
+            interactable.Interact(gameObject);
+            return;
+        }
+
         if (heldBody != null)
             Drop(CalculateReleaseImpulse());
         else

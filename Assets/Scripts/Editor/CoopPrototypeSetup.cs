@@ -23,12 +23,42 @@ public static class CoopPrototypeSetup
     const string MainMenuPath = ScenesFolder + "/MainMenu.unity";
     const string GameplayPath = ScenesFolder + "/Gameplay.unity";
 
+    [MenuItem("Tools/Coop Prototype/Ensure Escape Vehicle Extract Button")]
+    public static void EnsureEscapeVehicleExtractButton()
+    {
+        int updated = 0;
+        if (System.IO.File.Exists(EscapeVehiclePrefabPath))
+        {
+            GameObject prefabRoot = PrefabUtility.LoadPrefabContents(EscapeVehiclePrefabPath);
+            ArenaBuilder.EnsureEscapeVehicleExtractSetup(prefabRoot);
+            PrefabUtility.SaveAsPrefabAsset(prefabRoot, EscapeVehiclePrefabPath);
+            PrefabUtility.UnloadPrefabContents(prefabRoot);
+            updated++;
+        }
+
+        Scene gameplay = EditorSceneManager.OpenScene(GameplayPath, OpenSceneMode.Single);
+        foreach (GameObject root in gameplay.GetRootGameObjects())
+        {
+            if (root.name != "EscapeVehicle" && !root.name.StartsWith("EscapeVehicle"))
+                continue;
+            ArenaBuilder.EnsureEscapeVehicleExtractSetup(root);
+            EditorUtility.SetDirty(root);
+            updated++;
+        }
+
+        EditorSceneManager.MarkSceneDirty(gameplay);
+        EditorSceneManager.SaveScene(gameplay);
+        AssetDatabase.SaveAssets();
+        EditorUtility.DisplayDialog("Escape Vehicle", $"Extract button / zona interior listos ({updated}).", "OK");
+    }
+
     [MenuItem("Tools/Coop Prototype/Create Escape Vehicle Prefab And Place In Gameplay")]
     public static void CreateEscapeVehiclePrefabAndPlace()
     {
         EnsureFolders();
 
         GameObject vehicle = ArenaBuilder.BuildEscapeVehicle();
+        ArenaBuilder.EnsureEscapeVehicleExtractSetup(vehicle);
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(vehicle, EscapeVehiclePrefabPath);
         Object.DestroyImmediate(vehicle);
 

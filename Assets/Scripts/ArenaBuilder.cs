@@ -56,14 +56,72 @@ public static class ArenaBuilder
         ramp.transform.localScale = new Vector3(3.2f, 0.12f, 3.2f);
         ApplyColor(ramp, rampColor);
 
-        var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone));
+        var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone), typeof(VehicleInteriorZone));
         zone.transform.SetParent(vehicle.transform, false);
         zone.transform.localPosition = new Vector3(0f, 1.4f, 0.4f);
         BoxCollider trigger = zone.GetComponent<BoxCollider>();
         trigger.isTrigger = true;
         trigger.size = new Vector3(3.2f, 2f, 4.5f);
 
+        CreateExtractButton(vehicle.transform, zone.GetComponent<VehicleInteriorZone>());
+
         return vehicle;
+    }
+
+    public static void CreateExtractButton(Transform vehicleRoot, VehicleInteriorZone interiorZone)
+    {
+        if (vehicleRoot == null)
+            return;
+
+        Transform existing = vehicleRoot.Find("ExtractButton");
+        if (existing != null)
+        {
+            if (!existing.TryGetComponent(out RoundExtractButton _))
+                existing.gameObject.AddComponent<RoundExtractButton>();
+            return;
+        }
+
+        // Panel interactuable en la cabina / pared frontal interior.
+        GameObject button = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        button.name = "ExtractButton";
+        button.transform.SetParent(vehicleRoot, false);
+        button.transform.localPosition = new Vector3(0f, 1.55f, 2.85f);
+        button.transform.localRotation = Quaternion.identity;
+        button.transform.localScale = new Vector3(0.9f, 0.55f, 0.12f);
+        ApplyColor(button, new Color(0.85f, 0.2f, 0.15f));
+
+        RoundExtractButton extract = button.AddComponent<RoundExtractButton>();
+        if (interiorZone != null)
+            extract.SetInteriorZone(interiorZone);
+    }
+
+    /// <summary>Asegura zona + botón en un vehículo ya existente (prefab/escena).</summary>
+    public static void EnsureEscapeVehicleExtractSetup(GameObject vehicle)
+    {
+        if (vehicle == null)
+            return;
+
+        Transform zoneT = vehicle.transform.Find("ReviveZone");
+        VehicleInteriorZone interior;
+        if (zoneT == null)
+        {
+            var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone), typeof(VehicleInteriorZone));
+            zone.transform.SetParent(vehicle.transform, false);
+            zone.transform.localPosition = new Vector3(0f, 1.4f, 0.4f);
+            BoxCollider trigger = zone.GetComponent<BoxCollider>();
+            trigger.isTrigger = true;
+            trigger.size = new Vector3(3.2f, 2f, 4.5f);
+            interior = zone.GetComponent<VehicleInteriorZone>();
+        }
+        else
+        {
+            if (!zoneT.TryGetComponent(out PlayerReviveZone _))
+                zoneT.gameObject.AddComponent<PlayerReviveZone>();
+            if (!zoneT.TryGetComponent(out interior))
+                interior = zoneT.gameObject.AddComponent<VehicleInteriorZone>();
+        }
+
+        CreateExtractButton(vehicle.transform, interior);
     }
 
     public static void BuildLocalPhysicsProps(Transform parent)

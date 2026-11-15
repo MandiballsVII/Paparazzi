@@ -7,11 +7,13 @@ public class PlayerPhotoCapture : MonoBehaviour
 {
     [SerializeField] int photoWidth = 640;
     [SerializeField] int photoHeight = 360;
+    [SerializeField] float maxSubjectDistance = 40f;
     [SerializeField] Camera playerCamera;
 
     PlayerInput playerInput;
     PlayerPhotoAlbum album;
     PlayerPauseMenu pauseMenu;
+    PlayerHealth health;
     InputAction photoAction;
     bool inputBound;
 
@@ -25,6 +27,7 @@ public class PlayerPhotoCapture : MonoBehaviour
         playerInput = GetComponent<PlayerInput>();
         album = GetComponent<PlayerPhotoAlbum>();
         TryGetComponent(out pauseMenu);
+        TryGetComponent(out health);
 
         if (playerCamera == null)
         {
@@ -74,14 +77,40 @@ public class PlayerPhotoCapture : MonoBehaviour
         if (pauseMenu != null && pauseMenu.IsOpen)
             return;
 
+        if (health == null)
+            TryGetComponent(out health);
+        if (health != null && health.IsDead)
+            return;
+
         CaptureAndStore();
     }
 
     public Texture2D CaptureAndStore()
     {
         Texture2D photo = CaptureFrame();
-        if (photo != null)
-            album.AddPhoto(photo);
+        if (photo == null)
+            return null;
+
+        CelebrityBrain celebrity = PhotoEvaluator.FindCelebrity();
+        var context = new PhotoCaptureContext
+        {
+            Camera = playerCamera,
+            Photographer = transform,
+            Celebrity = celebrity,
+            MaxSubjectDistance = maxSubjectDistance
+        };
+
+        PhotoEvaluation evaluation = PhotoEvaluator.Evaluate(context);
+        var shot = new PhotoShot(photo, evaluation, transform);
+        album.AddShot(shot);
+
+        if (shot.IsControversialActionShot)
+        {
+            RoundObjectiveState.NotifyControversialActionShot(shot);
+            if (celebrity != null)
+                celebrity.NotifyPhotographedDuringAction();
+        }
+
         return photo;
     }
 
@@ -99,8 +128,6 @@ public class PlayerPhotoCapture : MonoBehaviour
         Rect previousRect = playerCamera.rect;
         bool previousEnabled = playerCamera.enabled;
 
-        // En split-screen, camera.rect es media pantalla: si no lo reseteamos,
-        // Render() solo rellena esa mitad del RT y el resto queda negro.
         playerCamera.enabled = true;
         playerCamera.rect = new Rect(0f, 0f, 1f, 1f);
         playerCamera.targetTexture = temporary;

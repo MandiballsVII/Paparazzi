@@ -217,7 +217,11 @@ public class PlayerPauseMenu : MonoBehaviour
 
     void OnPhotosClicked() => ShowPhotosPanel();
     void OnResumeClicked() => CloseMenu();
-    void OnLeaveClicked() => MatchSessionExit.LeaveMatch();
+    void OnLeaveClicked()
+    {
+        // Asegura limpiar jugadores DontDestroyOnLoad al salir al menú.
+        MatchSessionExit.LeaveMatch();
+    }
     void OnPhotosBackClicked() => ShowMainPanel();
 
     void RefreshCursorForMenu(bool menuOpen)

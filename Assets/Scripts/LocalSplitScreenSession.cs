@@ -12,6 +12,12 @@ public class LocalSplitScreenSession : MonoBehaviour
     GameObject playerTemplate;
     bool keyboardJoined;
     bool started;
+    bool lobbyMode;
+
+    public void SetLobbyMode(bool enabledLobby)
+    {
+        lobbyMode = enabledLobby;
+    }
 
     public void BeginSession()
     {
@@ -19,6 +25,7 @@ public class LocalSplitScreenSession : MonoBehaviour
             return;
 
         started = true;
+        lobbyMode = false;
         enabled = true;
 
         // El escenario lo aporta la escena Gameplay; solo spawneamos props agarrables.
@@ -38,7 +45,7 @@ public class LocalSplitScreenSession : MonoBehaviour
 
     void Update()
     {
-        if (!started)
+        if (!started || lobbyMode)
             return;
 
         if (players.Count < MaxPlayers)
@@ -104,7 +111,14 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         controller.enabled = true;
 
-        ArenaBuilder.ApplyColor(player.gameObject, ArenaBuilder.PlayerColors[players.Count]);
+        int index = players.Count;
+        Rect view = LobbyPlayerTransfer.ViewportFor(index, index + 1);
+        LobbyPlayerTransfer.EnsureIdentity(
+            player.gameObject,
+            index,
+            index % ArenaBuilder.PlayerColors.Length,
+            view,
+            controlScheme);
         players.Add(player);
         RefreshViewports();
         RefreshCursor();
@@ -116,28 +130,15 @@ public class LocalSplitScreenSession : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Camera camera = players[i].GetComponent<PlayerMovement>().PlayerCamera;
-            camera.rect = ViewportFor(i, count);
+            Rect view = LobbyPlayerTransfer.ViewportFor(i, count);
+            camera.rect = view;
+
+            if (players[i].TryGetComponent(out PlayerSessionIdentity identity))
+                identity.SetViewport(view);
 
             AudioListener listener = camera.GetComponent<AudioListener>();
             if (listener != null)
                 listener.enabled = i == 0;
-        }
-    }
-
-    static Rect ViewportFor(int index, int count)
-    {
-        switch (count)
-        {
-            case 1:
-                return new Rect(0f, 0f, 1f, 1f);
-            case 2:
-                return index == 0
-                    ? new Rect(0f, 0f, 0.5f, 1f)
-                    : new Rect(0.5f, 0f, 0.5f, 1f);
-            default:
-                float x = (index % 2) * 0.5f;
-                float y = index < 2 ? 0.5f : 0f;
-                return new Rect(x, y, 0.5f, 0.5f);
         }
     }
 

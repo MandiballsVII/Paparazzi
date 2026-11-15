@@ -6,8 +6,37 @@ using UnityEngine.SceneManagement;
 public static class MatchSessionExit
 {
     const string MainMenuSceneName = "MainMenu";
+    const string LobbySceneName = "Lobby";
+
+    public static void ExtractToLobby()
+    {
+        // 1) Preservar jugadores (clon online / DontDestroyOnLoad local) ANTES de parar red.
+        LobbyPlayerTransfer.PrepareBeforeLeaveGameplay();
+
+        // 2) Parar FishNet (destruye NetworkObjects de Gameplay; los preservados ya están fuera).
+        StopNetworking();
+
+        RoundObjectiveState.Clear();
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        // 3) Cargar Lobby (LobbyBootstrap coloca players + UI).
+        SceneManager.LoadScene(LobbySceneName);
+    }
 
     public static void LeaveMatch()
+    {
+        LobbyPlayerTransfer.DestroyPreservedPlayers();
+        StopNetworking();
+        RoundResultStore.Clear();
+        RoundObjectiveState.Clear();
+        GameSessionConfig.Clear();
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        SceneManager.LoadScene(MainMenuSceneName);
+    }
+
+    static void StopNetworking()
     {
         NetworkManager networkManager = InstanceFinder.NetworkManager;
         if (networkManager == null)
@@ -21,15 +50,11 @@ public static class MatchSessionExit
             if (networkManager.ClientManager != null && networkManager.IsClientStarted)
                 networkManager.ClientManager.StopConnection();
         }
-
-        GameSessionConfig.Clear();
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-        SceneManager.LoadScene(MainMenuSceneName);
     }
 
     public static void QuitGame()
     {
+        LobbyPlayerTransfer.DestroyPreservedPlayers();
         GameSessionConfig.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;

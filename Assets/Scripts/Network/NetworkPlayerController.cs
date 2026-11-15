@@ -256,6 +256,15 @@ public class NetworkPlayerController : NetworkBehaviour
         if (TryGetComponent(out PlayerHealthHud hud))
             hud.Initialize(playerCamera);
 
+        int index = Owner.ClientId >= 0 ? Owner.ClientId : 0;
+        int color = colorIndex.Value;
+        LobbyPlayerTransfer.EnsureIdentity(
+            gameObject,
+            index,
+            color,
+            playerCamera != null ? playerCamera.rect : new Rect(0f, 0f, 1f, 1f),
+            playerInput != null ? playerInput.currentControlScheme : string.Empty);
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }

@@ -118,8 +118,11 @@ public class CelebrityBrain : MonoBehaviour
 
     Coroutine brainRoutine;
     bool visualsHidden;
+    bool fleeAndStayHidden;
 
     public AiState CurrentState => state;
+    public bool IsPerformingControversialAction => state == AiState.PerformAction;
+    public bool HasFledPermanently => fleeAndStayHidden;
     public float ActionCooldownRemaining => actionCooldownRemaining;
     public string CurrentActionId =>
         CelebrityRoundState.Instance != null && CelebrityRoundState.Instance.HasSelectedAction
@@ -512,6 +515,16 @@ void Update(){
 
     IEnumerator HiddenTick()
     {
+        if (fleeAndStayHidden)
+        {
+            if (logStates)
+                Debug.Log($"[{name}] Oculto permanente (fotografiado en acción).", this);
+
+            while (state == AiState.Hidden)
+                yield return null;
+            yield break;
+        }
+
         float hideTime = Random.Range(hideDurationMin, hideDurationMax);
         if (logStates)
             Debug.Log($"[{name}] Oculto {hideTime:F1}s", this);
@@ -524,6 +537,25 @@ void Update(){
             yield break;
 
         Reappear();
+    }
+
+    /// <summary>
+    /// Llamado al capturar una foto válida de la acción polémica.
+    /// Huye y no vuelve a aparecer en esta ronda.
+    /// </summary>
+    public void NotifyPhotographedDuringAction()
+    {
+        if (!isActiveAndEnabled || visualsHidden)
+            return;
+
+        fleeAndStayHidden = true;
+        if (logStates)
+            Debug.Log($"[{name}] ¡Fotografiado en acción! Huida permanente.", this);
+
+        if (state == AiState.Flee || state == AiState.Hidden)
+            return;
+
+        InterruptForFlee();
     }
 
     void Reappear()

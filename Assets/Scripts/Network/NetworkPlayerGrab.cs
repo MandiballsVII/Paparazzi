@@ -135,6 +135,13 @@ public class NetworkPlayerGrab : NetworkBehaviour
         if (playerCamera == null)
             return;
 
+        if (PlayerInteractUtility.TryGetInteractable(playerCamera, grabDistance, out IPlayerInteractable interactable, out _)
+            && interactable.CanInteract(gameObject))
+        {
+            interactable.Interact(gameObject);
+            return;
+        }
+
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
         if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
             return;

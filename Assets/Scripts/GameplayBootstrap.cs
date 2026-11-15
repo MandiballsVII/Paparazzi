@@ -19,7 +19,10 @@ public class GameplayBootstrap : MonoBehaviour
             return;
         }
 
+        RoundResultStore.Clear();
+        RoundObjectiveState.Clear();
         DisableSceneCamera();
+        EnsureEscapeVehicleExtract();
 
         switch (GameSessionConfig.Mode)
         {
@@ -33,6 +36,23 @@ public class GameplayBootstrap : MonoBehaviour
                 StartClient();
                 break;
         }
+    }
+
+    static void EnsureEscapeVehicleExtract()
+    {
+        GameObject vehicle = null;
+        GameObject[] roots = SceneManager.GetActiveScene().GetRootGameObjects();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            if (roots[i].name == "EscapeVehicle" || roots[i].name.StartsWith("EscapeVehicle"))
+            {
+                vehicle = roots[i];
+                break;
+            }
+        }
+
+        if (vehicle != null)
+            ArenaBuilder.EnsureEscapeVehicleExtractSetup(vehicle);
     }
 
     void StartLocal()
