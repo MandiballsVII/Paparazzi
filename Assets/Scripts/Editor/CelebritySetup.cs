@@ -163,26 +163,12 @@ public static class CelebritySetup
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(built, CelebrityPrefabPath);
         Object.DestroyImmediate(built);
 
+        // Ya no se coloca en la escena: CelebritySpawner lo instancia al empezar el nivel.
         Scene gameplay = EnsureGameplayOpen();
-
         foreach (GameObject root in gameplay.GetRootGameObjects())
         {
             if (root.name == "Celebrity" || root.name.StartsWith("Celebrity"))
                 Object.DestroyImmediate(root);
-        }
-
-        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-        instance.name = "Celebrity";
-
-        Vector3 spawn = Vector3.zero;
-        if (NavMesh.SamplePosition(spawn, out NavMeshHit hit, 50f, NavMesh.AllAreas))
-            spawn = hit.position;
-
-        instance.transform.position = spawn;
-        if (instance.TryGetComponent(out NavMeshAgent agent))
-        {
-            if (NavMesh.SamplePosition(spawn, out hit, 50f, NavMesh.AllAreas))
-                agent.Warp(hit.position);
         }
 
         EditorSceneManager.MarkSceneDirty(gameplay);
@@ -190,15 +176,15 @@ public static class CelebritySetup
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        Selection.activeGameObject = instance;
+        Selection.activeObject = prefab;
         if (showDialog)
         {
             EditorUtility.DisplayDialog(
                 "Celebrity",
                 "Prefab: Assets/Prefabs/Celebrity.prefab\n" +
-                "Instancia en Gameplay.\n\n" +
-                "Cápsula más grande que el player. Asigna el material en el MeshRenderer.\n" +
-                "Patrulla aleatoria con NavMeshAgent (CelebrityPatrol).",
+                "Sin instancia en escena.\n\n" +
+                "Al Play, CelebritySpawner lo instancia en un punto aleatorio del NavMesh (Room_*).\n" +
+                "Asigna el prefab en GameplayBootstrap si Resources/Celebrity no existe.",
                 "OK");
         }
     }

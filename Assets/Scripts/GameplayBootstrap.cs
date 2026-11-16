@@ -9,6 +9,12 @@ public class GameplayBootstrap : MonoBehaviour
     [SerializeField] NetworkManager networkManager;
     [SerializeField] LocalSplitScreenSession localSession;
     [SerializeField] OnlineArenaSpawner onlineArenaSpawner;
+    [SerializeField] GameObject celebrityPrefab;
+    [SerializeField] CelebritySpawner celebritySpawner;
+
+    // Cacheado: FormatLocalAddressesForDisplay() en OnGUI cada frame mataba al host (~8ms + GC).
+    string cachedModeLabel = string.Empty;
+    Rect modeLabelRect = new Rect(16f, 0f, 0f, 44f);
 
     void Start()
     {
@@ -23,6 +29,7 @@ public class GameplayBootstrap : MonoBehaviour
         RoundObjectiveState.Clear();
         DisableSceneCamera();
         EnsureEscapeVehicleExtract();
+        EnsureCelebritySpawner();
 
         switch (GameSessionConfig.Mode)
         {
@@ -36,6 +43,41 @@ public class GameplayBootstrap : MonoBehaviour
                 StartClient();
                 break;
         }
+    }
+
+    void EnsureCelebritySpawner()
+    {
+        if (celebritySpawner == null)
+            celebritySpawner = FindAnyObjectByType<CelebritySpawner>();
+
+        if (celebritySpawner == null)
+        {
+            var go = new GameObject("CelebritySpawner");
+            celebritySpawner = go.AddComponent<CelebritySpawner>();
+        }
+
+        if (celebrityPrefab == null)
+        {
+#if UNITY_EDITOR
+            celebrityPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Prefabs/Celebrity.prefab");
+#endif
+            if (celebrityPrefab == null)
+            {
+                Debug.LogError(
+                    "[GameplayBootstrap] Asigna Celebrity prefab en el inspector " +
+                    "(Assets/Prefabs/Celebrity.prefab).");
+            }
+        }
+
+        celebritySpawner.SetPrefab(celebrityPrefab);
+    }
+
+    void SpawnCelebrityForSession()
+    {
+        EnsureCelebritySpawner();
+        if (celebritySpawner != null)
+            celebritySpawner.SpawnAtLevelStart();
     }
 
     static void EnsureEscapeVehicleExtract()
@@ -71,6 +113,8 @@ public class GameplayBootstrap : MonoBehaviour
 
         localSession.enabled = true;
         localSession.BeginSession();
+        cachedModeLabel = "LOCAL";
+        SpawnCelebrityForSession();
     }
 
     void StartHost()
@@ -86,10 +130,12 @@ public class GameplayBootstrap : MonoBehaviour
         bool clientStarted = networkManager.ClientManager.StartConnection();
 
         string lanInfo = NetworkAddressUtility.FormatLocalAddressesForDisplay();
+        cachedModeLabel = $"HOST :{GameSessionConfig.DefaultPort}  |  {lanInfo}";
         if (serverStarted && clientStarted)
         {
             Debug.Log($"Host iniciado en puerto {GameSessionConfig.DefaultPort}. {lanInfo}");
             Debug.Log("Clientes en el mismo PC: 127.0.0.1  ·  Clientes en LAN (portátil): usa la IP de arriba.");
+            SpawnCelebrityForSession();
         }
         else
         {
@@ -108,6 +154,9 @@ public class GameplayBootstrap : MonoBehaviour
 
         networkManager.ClientManager.OnClientConnectionState += OnClientConnectionState;
 
+        cachedModeLabel =
+            $"CLIENT → {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}";
+
         bool started = networkManager.ClientManager.StartConnection(GameSessionConfig.JoinAddress, GameSessionConfig.DefaultPort);
         Debug.Log(started
             ? $"Cliente conectando a {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}..."
@@ -117,7 +166,11 @@ public class GameplayBootstrap : MonoBehaviour
     void OnClientConnectionState(ClientConnectionStateArgs args)
     {
         if (args.ConnectionState == LocalConnectionState.Started)
+        {
             Debug.Log("Cliente conectado al host.");
+            // Misma lógica que cuando estaba en escena: cada peer instancia su famoso local.
+            SpawnCelebrityForSession();
+        }
         else if (args.ConnectionState == LocalConnectionState.Stopped)
             Debug.LogWarning("Cliente desconectado / no pudo conectar. Comprueba IP, puerto, firewall y que el host esté en marcha.");
     }
@@ -160,18 +213,12 @@ public class GameplayBootstrap : MonoBehaviour
 
     void OnGUI()
     {
-        if (GameSessionConfig.Mode == GamePlayMode.None)
+        if (cachedModeLabel.Length == 0)
             return;
 
-        string modeLabel = GameSessionConfig.Mode switch
-        {
-            GamePlayMode.LocalSplitScreen => "LOCAL",
-            GamePlayMode.OnlineHost => $"HOST :{GameSessionConfig.DefaultPort}  |  {NetworkAddressUtility.FormatLocalAddressesForDisplay()}",
-            GamePlayMode.OnlineClient => $"CLIENT → {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}",
-            _ => ""
-        };
-
-        GUI.Label(new Rect(16f, Screen.height - 56f, Screen.width - 32f, 44f), modeLabel);
+        modeLabelRect.y = Screen.height - 56f;
+        modeLabelRect.width = Screen.width - 32f;
+        GUI.Label(modeLabelRect, cachedModeLabel);
     }
 }
 

@@ -129,12 +129,6 @@ public class CelebrityBrain : MonoBehaviour
             ? CelebrityRoundState.Instance.SelectedAction.Id
             : string.Empty;
 
-void Update(){
-    Debug.Log("CurrentState: " + CurrentState);
-    Debug.Log("ActionCooldownRemaining: " + ActionCooldownRemaining);
-    Debug.Log("CurrentActionId: " + CurrentActionId);
-    Debug.Log("CurrentActionId: " + CurrentActionId);
-}
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();

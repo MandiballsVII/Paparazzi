@@ -268,8 +268,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1ad7536fb7a0c04fb8df0fc0e232c5a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CelebrityBrain
-  actionCooldownMin: 90
-  actionCooldownMax: 180
+  actionCooldownMin: 10
+  actionCooldownMax: 20
   actionDurationMin: 5
   actionDurationMax: 10
   listenIdleDuration: 8
