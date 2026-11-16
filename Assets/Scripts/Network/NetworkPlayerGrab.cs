@@ -40,6 +40,10 @@ public class NetworkPlayerGrab : NetworkBehaviour
     float maxSoftPushSpeed = 3f;
 
     [SerializeField]
+    [Tooltip("No saturar la red con ServerRpc de hold cada frame.")]
+    float holdNetworkSyncInterval = 0.05f;
+
+    [SerializeField]
     Camera playerCamera;
 
     readonly SyncVar<bool> isHolding = new();
@@ -59,6 +63,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
     readonly List<Collider> ignoredColliders = new();
     static readonly Collider[] softPushBuffer = new Collider[16];
     float nextIgnoreRefreshTime;
+    float nextHoldNetworkSyncTime;
 
     public bool IsHolding => isHolding.Value;
 
@@ -409,8 +414,13 @@ public class NetworkPlayerGrab : NetworkBehaviour
             }
         }
 
-        UpdateHoldServerRpc(pos, rot);
+        // Pose local cada frame; red a intervalo fijo para no ahogar NetworkTransform del player.
         ApplyHoldLocally(pos, rot);
+        if (Time.time >= nextHoldNetworkSyncTime)
+        {
+            nextHoldNetworkSyncTime = Time.time + holdNetworkSyncInterval;
+            UpdateHoldServerRpc(pos, rot);
+        }
 
         float radius = HeldObjectHoldQuery.EstimateRadius(heldCollider);
         SoftPushDynamicsAround(pos, radius);

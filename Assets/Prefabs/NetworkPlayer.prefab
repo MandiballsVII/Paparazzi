@@ -380,7 +380,7 @@ MonoBehaviour:
   _initializeOrder: 0
   _preventDespawnOnDisconnect: 0
   _defaultDespawnType: 0
-  _initializedTimestamp: -8584096012779440289
+  _initializedTimestamp: -8584067491144891398
 --- !u!114 &7777404989258011188
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -403,10 +403,10 @@ MonoBehaviour:
     Rotation: 1
     Scale: 0
   _useScaledTime: 1
-  _interpolation: 2
-  _extrapolation: 2
-  _enableTeleport: 0
-  _teleportThreshold: 1
+  _interpolation: 1
+  _extrapolation: 0
+  _enableTeleport: 1
+  _teleportThreshold: 0
   _clientAuthoritative: 1
   _sendToOwner: 0
   _interval: 1
@@ -448,9 +448,12 @@ MonoBehaviour:
   gravity: -20
   mouseSensitivity: 0.12
   stickSensitivity: 120
-  pushPower: 3
+  softPushAcceleration: 14
+  maxSoftPushSpeed: 3
+  playerSeparateSpeed: 3.5
   cameraPivot: {fileID: 6182681072762561738}
   playerCamera: {fileID: 4841945828787539668}
+  faceIndicator: {fileID: 0}
 --- !u!114 &5523623263787741957
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -468,6 +471,13 @@ MonoBehaviour:
   _networkObjectCache: {fileID: 5519255930859113086}
   grabDistance: 3
   holdDistance: 2.2
-  throwForce: 12
+  moveThrowThreshold: 0.75
+  throwSpeedFactor: 2.5
+  minThrowForce: 4
+  maxThrowForce: 18
   maxGrabMass: 25
+  lookSearchIterations: 10
+  softPushAcceleration: 16
+  maxSoftPushSpeed: 3
+  holdNetworkSyncInterval: 0.05
   playerCamera: {fileID: 4841945828787539668}
