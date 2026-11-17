@@ -3,6 +3,7 @@ using FishNet.Object.Synchronizing;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering.Universal;
+using FishNet.Component.Transforming;
 
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(PlayerInput))]
@@ -66,8 +67,10 @@ public class NetworkPlayerController : NetworkBehaviour
     bool jumpQueued;
     bool inputBound;
     bool crouchToggleLatched;
+    bool offlineLocalControl;
 
     public Camera PlayerCamera => playerCamera;
+    public bool HasLocalControl => offlineLocalControl || (IsSpawned && IsOwner);
 
     void Awake()
     {
@@ -93,7 +96,7 @@ public class NetworkPlayerController : NetworkBehaviour
         if (stance != null)
             stance.Initialize(cameraPivot);
         else if (cameraPivot != null)
-            cameraPivot.localPosition = new Vector3(0f, 0.75f, 0f);
+            cameraPivot.localPosition = PlayerBodyMetrics.CameraPivotLocalPosition;
 
         if (playerCamera == null && cameraPivot != null)
             playerCamera = cameraPivot.GetComponentInChildren<Camera>(true);
@@ -114,11 +117,7 @@ public class NetworkPlayerController : NetworkBehaviour
         if (controller == null)
             return;
 
-        // Mesh Capsule por defecto: alto 2, radio 0.5, centrada en el origen.
-        controller.height = 2f;
-        controller.radius = 0.5f;
-        controller.center = Vector3.zero;
-        controller.skinWidth = 0.08f;
+        PlayerBodyMetrics.ApplyToCharacterController(controller);
     }
 
     void EnsureFaceIndicator()
@@ -194,6 +193,9 @@ public class NetworkPlayerController : NetworkBehaviour
         if (stance != null)
             stance.SetCrouching(isCrouching.Value);
 
+        if (offlineLocalControl)
+            return;
+
         if (!IsOwner)
         {
             if (controller != null)
@@ -213,6 +215,41 @@ public class NetworkPlayerController : NetworkBehaviour
             controller.enabled = true;
 
         EnableOwnerControls();
+    }
+
+    /// <summary>
+    /// Gym / tests sin FishNet: misma cápsula/cámara/mecánicas del NetworkPlayer.
+    /// </summary>
+    public void ActivateOfflineLocalControl(Rect viewport, int colorIndexValue = 0)
+    {
+        offlineLocalControl = true;
+
+        if (TryGetComponent(out NetworkTransform networkTransform))
+            networkTransform.enabled = false;
+
+        if (TryGetComponent(out NetworkPlayerGrab networkGrab))
+            networkGrab.enabled = false;
+
+        if (!TryGetComponent(out PlayerGrab localGrab))
+            localGrab = gameObject.AddComponent<PlayerGrab>();
+
+        if (controller != null)
+            controller.enabled = true;
+
+        EnableOwnerControls();
+
+        if (playerCamera != null)
+            playerCamera.rect = viewport;
+
+        localGrab.Initialize(playerCamera);
+        ApplyColor(colorIndexValue);
+
+        LobbyPlayerTransfer.EnsureIdentity(
+            gameObject,
+            colorIndexValue,
+            colorIndexValue,
+            viewport,
+            playerInput != null ? playerInput.currentControlScheme : string.Empty);
     }
 
     void EnableOwnerControls()
@@ -236,9 +273,11 @@ public class NetworkPlayerController : NetworkBehaviour
         {
             if (playerInput.actions == null)
                 playerInput.actions = InputSystem.actions;
+            PlayerInputUtility.EnsurePrivateActionAsset(playerInput);
 
             playerInput.defaultActionMap = "Player";
-            playerInput.neverAutoSwitchControlSchemes = false;
+            if (!offlineLocalControl)
+                playerInput.neverAutoSwitchControlSchemes = false;
             playerInput.enabled = true;
             BindInput();
         }
@@ -257,6 +296,9 @@ public class NetworkPlayerController : NetworkBehaviour
 
         if (TryGetComponent(out PlayerHealthHud hud))
             hud.Initialize(playerCamera);
+
+        if (offlineLocalControl)
+            return;
 
         int index = Owner.ClientId >= 0 ? Owner.ClientId : 0;
         int color = colorIndex.Value;
@@ -326,7 +368,7 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void OnJump(InputAction.CallbackContext context)
     {
-        if (!IsOwner)
+        if (!HasLocalControl)
             return;
 
         jumpQueued = true;
@@ -334,7 +376,7 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void Update()
     {
-        if (!IsOwner)
+        if (!HasLocalControl)
             return;
 
         if (health == null)
@@ -364,6 +406,19 @@ public class NetworkPlayerController : NetworkBehaviour
 
         bool holdCrouch = crouchAction != null && crouchAction.IsPressed();
         bool wantCrouch = holdCrouch || crouchToggleLatched;
+
+        if (offlineLocalControl)
+        {
+            if (wantCrouch == stance.IsCrouching)
+                return;
+
+            bool beforeOffline = stance.IsCrouching;
+            stance.SetCrouching(wantCrouch);
+            if (!wantCrouch && stance.IsCrouching && beforeOffline)
+                crouchToggleLatched = true;
+            return;
+        }
+
         if (wantCrouch == stance.IsCrouching && wantCrouch == isCrouching.Value)
             return;
 
@@ -444,12 +499,22 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
-        if (!IsOwner)
+        if (!HasLocalControl)
             return;
 
         Rigidbody body = hit.rigidbody;
         if (body == null || body.isKinematic)
             return;
+
+        if (offlineLocalControl || !IsSpawned)
+        {
+            PlayerSoftPush.SoftPushDynamicBody(
+                body,
+                hit.point,
+                softPushAcceleration,
+                maxSoftPushSpeed);
+            return;
+        }
 
         if (!body.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
             return;

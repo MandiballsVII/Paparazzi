@@ -37,13 +37,21 @@ public class PlayerPauseMenu : MonoBehaviour
     Button photosButton;
     MultiplayerEventSystem multiplayerEventSystem;
     InputSystemUIInputModule uiModule;
+    GraphicRaycaster graphicRaycaster;
+    readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
     public bool IsOpen => isOpen;
 
     public void Initialize(Camera camera)
     {
+        if (playerInput == null)
+            TryGetComponent(out playerInput);
+        if (album == null)
+            TryGetComponent(out album);
+
         playerCamera = camera;
         EnsureUi();
+        ConfigureUiModule();
         FitRootToCameraViewport();
     }
 
@@ -53,6 +61,16 @@ public class PlayerPauseMenu : MonoBehaviour
             return;
 
         FitRootToCameraViewport();
+    }
+
+    void Update()
+    {
+        if (!isOpen)
+            return;
+
+        // Fallback ratón: MultiplayerEventSystem + PlayerInput a menudo no entrega Click al uGUI
+        // (el mando sí va por Navigate/Submit). Mismo resultado que pulsar el botón.
+        TryProcessMouseUiClick();
     }
 
     void Awake()
@@ -132,6 +150,9 @@ public class PlayerPauseMenu : MonoBehaviour
         if (MatchSessionExit.IsExtractInProgress)
             return;
 
+        if (!IsContextFromThisPlayer(context))
+            return;
+
         if (!CanSwitchActionMaps())
             return;
 
@@ -146,6 +167,9 @@ public class PlayerPauseMenu : MonoBehaviour
         if (!isOpen)
             return;
 
+        if (!IsContextFromThisPlayer(context))
+            return;
+
         if (MatchSessionExit.IsExtractInProgress)
         {
             ForceCloseWithoutInputRestore();
@@ -157,6 +181,24 @@ public class PlayerPauseMenu : MonoBehaviour
             ShowMainPanel();
         else
             CloseMenu();
+    }
+
+    bool IsContextFromThisPlayer(InputAction.CallbackContext context)
+    {
+        InputDevice device = context.control != null ? context.control.device : null;
+        return PlayerInputUtility.IsDevicePairedToPlayer(playerInput, device);
+    }
+
+    /// <summary>
+    /// Tras clonar el InputActionAsset hay que volver a enganchar callbacks.
+    /// </summary>
+    public void RebindActionsForPrivateAsset()
+    {
+        UnbindPause();
+        UnbindCancel();
+        BindPause();
+        if (isOpen)
+            BindCancel();
     }
 
     public void OpenMenu()
@@ -178,6 +220,8 @@ public class PlayerPauseMenu : MonoBehaviour
         // Mantener Pause activo para cerrar con Esc / Start aunque el mapa Player esté off.
         InputAction pause = playerInput.actions.FindAction("Pause", false);
         pause?.Enable();
+
+        ConfigureUiModule();
 
         BindCancel();
         RefreshCursorForMenu(true);
@@ -300,6 +344,7 @@ public class PlayerPauseMenu : MonoBehaviour
         var canvasGo = new GameObject("PauseMenuCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvasGo.transform.SetParent(transform, false);
         canvas = canvasGo.GetComponent<Canvas>();
+        graphicRaycaster = canvasGo.GetComponent<GraphicRaycaster>();
         // Overlay + root limitado al pixelRect de la cámara → correcto en split-screen.
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 100;
@@ -316,6 +361,8 @@ public class PlayerPauseMenu : MonoBehaviour
         rootPanel.transform.SetParent(canvasGo.transform, false);
         Image dim = rootPanel.GetComponent<Image>();
         dim.color = new Color(0f, 0f, 0f, 0.65f);
+        // El atenuado no debe robar raycasts a los botones hijos.
+        dim.raycastTarget = false;
         rootRect = rootPanel.GetComponent<RectTransform>();
         StretchFull(rootRect);
 
@@ -349,8 +396,85 @@ public class PlayerPauseMenu : MonoBehaviour
         multiplayerEventSystem = eventGo.GetComponent<MultiplayerEventSystem>();
         multiplayerEventSystem.playerRoot = canvasTransform.gameObject;
         uiModule = eventGo.GetComponent<InputSystemUIInputModule>();
-        if (playerInput != null && playerInput.actions != null)
-            uiModule.actionsAsset = playerInput.actions;
+        ConfigureUiModule();
+    }
+
+    void ConfigureUiModule()
+    {
+        if (playerInput == null)
+            TryGetComponent(out playerInput);
+        if (uiModule == null || playerInput == null || playerInput.actions == null)
+            return;
+
+        InputActionAsset asset = playerInput.actions;
+        InputActionMap uiMap = asset.FindActionMap("UI", false);
+        if (uiMap == null)
+            return;
+
+        // Asignar referencias una a una: solo poner actionsAsset NO cablea Point/Click
+        // (HasNoActions() ve el asset y se salta AssignDefaultActions).
+        uiModule.actionsAsset = asset;
+        uiModule.point = InputActionReference.Create(uiMap.FindAction("Point"));
+        uiModule.leftClick = InputActionReference.Create(uiMap.FindAction("Click"));
+        uiModule.middleClick = InputActionReference.Create(uiMap.FindAction("MiddleClick"));
+        uiModule.rightClick = InputActionReference.Create(uiMap.FindAction("RightClick"));
+        uiModule.scrollWheel = InputActionReference.Create(uiMap.FindAction("ScrollWheel"));
+        uiModule.move = InputActionReference.Create(uiMap.FindAction("Navigate"));
+        uiModule.submit = InputActionReference.Create(uiMap.FindAction("Submit"));
+        uiModule.cancel = InputActionReference.Create(uiMap.FindAction("Cancel"));
+        playerInput.uiInputModule = uiModule;
+    }
+
+    bool IsKeyboardMousePlayer()
+    {
+        if (playerInput == null)
+            return true;
+        string scheme = playerInput.currentControlScheme;
+        return string.IsNullOrEmpty(scheme) || scheme == "Keyboard&Mouse";
+    }
+
+    void TryProcessMouseUiClick()
+    {
+        if (!IsKeyboardMousePlayer())
+            return;
+        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
+            return;
+        if (canvas == null)
+            return;
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        if (graphicRaycaster == null)
+            canvas.TryGetComponent(out graphicRaycaster);
+        if (graphicRaycaster == null)
+            return;
+
+        EventSystem eventSystem = multiplayerEventSystem != null
+            ? multiplayerEventSystem
+            : EventSystem.current;
+        if (eventSystem == null)
+            return;
+
+        var pointer = new PointerEventData(eventSystem)
+        {
+            position = Mouse.current.position.ReadValue()
+        };
+
+        uiRaycastResults.Clear();
+        graphicRaycaster.Raycast(pointer, uiRaycastResults);
+
+        for (int i = 0; i < uiRaycastResults.Count; i++)
+        {
+            Button button = uiRaycastResults[i].gameObject.GetComponentInParent<Button>();
+            if (button == null || !button.IsActive() || !button.interactable)
+                continue;
+            if (!button.transform.IsChildOf(canvas.transform))
+                continue;
+
+            button.onClick.Invoke();
+            return;
+        }
     }
 
     GameObject BuildMainPanel(Transform parent)

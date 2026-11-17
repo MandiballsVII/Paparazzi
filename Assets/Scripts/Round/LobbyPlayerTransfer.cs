@@ -162,7 +162,16 @@ public static class LobbyPlayerTransfer
         return clone;
     }
 
-    static void StripNetworkComponents(GameObject go)
+    /// <summary>
+    /// Quita FishNet de un clone (Gym/Lobby). No modificar el prefab asset.
+    /// </summary>
+    public static void PrepareOfflineClone(GameObject go, bool keepControl = true)
+    {
+        StripNetworkComponents(go);
+        RebindLocalComponents(go, keepControl);
+    }
+
+    public static void StripNetworkComponents(GameObject go)
     {
         // NetworkObserver depende de NetworkObject: quitarlo antes.
         FishNet.Observing.NetworkObserver[] observers =
@@ -190,6 +199,10 @@ public static class LobbyPlayerTransfer
 
     static void RebindLocalComponents(GameObject go, bool keepControl = true)
     {
+        // NetworkPlayer.prefab no trae pausa/foto/vida: los añadía NetworkPlayerController.Awake.
+        // Tras strip FishNet ese Awake no corre → hay que crearlos aquí.
+        EnsureOfflineGameplayComponents(go);
+
         Camera cam = go.GetComponentInChildren<Camera>(true);
         Transform pivot = go.transform.Find("CameraPivot");
 
@@ -203,7 +216,11 @@ public static class LobbyPlayerTransfer
         }
 
         if (go.TryGetComponent(out PlayerInput input))
+        {
+            if (keepControl)
+                PlayerInputUtility.EnsurePrivateActionAsset(input);
             input.enabled = keepControl;
+        }
 
         if (keepControl)
         {
@@ -226,11 +243,22 @@ public static class LobbyPlayerTransfer
                 grab.Initialize(cam);
 
             if (go.TryGetComponent(out PlayerPhotoCapture capture) && cam != null)
+            {
                 capture.Initialize(cam);
+                capture.BindInput();
+            }
+
             if (go.TryGetComponent(out PlayerPauseMenu pause) && cam != null)
+            {
                 pause.Initialize(cam);
+                pause.RebindActionsForPrivateAsset();
+            }
+
             if (go.TryGetComponent(out PlayerHealthHud hud) && cam != null)
                 hud.Initialize(cam);
+
+            if (go.TryGetComponent(out PlayerStance stance) && pivot != null)
+                stance.Initialize(pivot);
         }
         else
         {
@@ -243,6 +271,36 @@ public static class LobbyPlayerTransfer
 
         if (go.TryGetComponent(out CharacterController cc))
             cc.enabled = true;
+    }
+
+    static void EnsureOfflineGameplayComponents(GameObject go)
+    {
+        if (!go.TryGetComponent(out PlayerStance _))
+            go.AddComponent<PlayerStance>();
+
+        if (!go.TryGetComponent(out PlayerHealth _))
+            go.AddComponent<PlayerHealth>();
+
+        if (!go.TryGetComponent(out PlayerRagdoll _))
+            go.AddComponent<PlayerRagdoll>();
+
+        if (!go.TryGetComponent(out PlayerHealthHud _))
+            go.AddComponent<PlayerHealthHud>();
+
+        if (!go.TryGetComponent(out PlayerPhotoAlbum _))
+            go.AddComponent<PlayerPhotoAlbum>();
+
+        if (!go.TryGetComponent(out PlayerPhotoCapture _))
+            go.AddComponent<PlayerPhotoCapture>();
+
+        if (!go.TryGetComponent(out PlayerPauseMenu _))
+            go.AddComponent<PlayerPauseMenu>();
+
+        if (!go.TryGetComponent(out PerceptionTarget _))
+            go.AddComponent<PerceptionTarget>();
+
+        if (!go.TryGetComponent(out FootstepNoiseEmitter _))
+            go.AddComponent<FootstepNoiseEmitter>();
     }
 
     public static void EnsureIdentity(GameObject player, int index, int colorIndex, Rect viewport, string scheme)

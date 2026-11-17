@@ -135,13 +135,11 @@ public static class CoopPrototypeSetup
         Object.DestroyImmediate(player.GetComponent<CapsuleCollider>());
 
         CharacterController controller = player.AddComponent<CharacterController>();
-        controller.height = 1.8f;
-        controller.radius = 0.35f;
-        controller.center = new Vector3(0f, 0.9f, 0f);
+        PlayerBodyMetrics.ApplyToCharacterController(controller);
 
         var cameraPivot = new GameObject("CameraPivot");
         cameraPivot.transform.SetParent(player.transform);
-        cameraPivot.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+        cameraPivot.transform.localPosition = PlayerBodyMetrics.CameraPivotLocalPosition;
 
         var cameraObject = new GameObject("PlayerCamera", typeof(Camera), typeof(AudioListener), typeof(UniversalAdditionalCameraData));
         cameraObject.transform.SetParent(cameraPivot.transform);

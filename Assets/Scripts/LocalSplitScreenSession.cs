@@ -93,6 +93,7 @@ public class LocalSplitScreenSession : MonoBehaviour
 
         player.neverAutoSwitchControlSchemes = true;
         player.gameObject.name = $"Player {players.Count + 1}";
+        PlayerInputUtility.EnsurePrivateActionAsset(player);
 
         Transform pivot = player.transform.Find("CameraPivot");
         Camera playerCamera = pivot.GetComponentInChildren<Camera>();
@@ -100,7 +101,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.GetComponent<PlayerMovement>().Initialize(pivot, playerCamera);
         player.GetComponent<PlayerGrab>().Initialize(playerCamera);
         player.GetComponent<PlayerPhotoCapture>().Initialize(playerCamera);
-        player.GetComponent<PlayerPauseMenu>().Initialize(playerCamera);
+        PlayerPauseMenu pauseMenu = player.GetComponent<PlayerPauseMenu>();
+        pauseMenu.Initialize(playerCamera);
+        pauseMenu.RebindActionsForPrivateAsset();
         player.GetComponent<PlayerHealthHud>().Initialize(playerCamera);
 
         player.gameObject.SetActive(true);
@@ -163,10 +166,7 @@ public class LocalSplitScreenSession : MonoBehaviour
         Destroy(player.GetComponent<CapsuleCollider>());
 
         CharacterController controller = player.AddComponent<CharacterController>();
-        // Coincide con el mesh Capsule por defecto (alto 2, radio 0.5, centro 0).
-        controller.height = 2f;
-        controller.radius = 0.5f;
-        controller.center = Vector3.zero;
+        PlayerBodyMetrics.ApplyToCharacterController(controller);
 
         var face = GameObject.CreatePrimitive(PrimitiveType.Cube);
         face.name = "Face";
@@ -178,7 +178,7 @@ public class LocalSplitScreenSession : MonoBehaviour
 
         var cameraPivot = new GameObject("CameraPivot").transform;
         cameraPivot.SetParent(player.transform);
-        cameraPivot.localPosition = new Vector3(0f, 0.75f, 0f);
+        cameraPivot.localPosition = PlayerBodyMetrics.CameraPivotLocalPosition;
 
         var cameraObject = new GameObject("PlayerCamera", typeof(Camera), typeof(AudioListener), typeof(UniversalAdditionalCameraData));
         cameraObject.transform.SetParent(cameraPivot);
@@ -196,6 +196,7 @@ public class LocalSplitScreenSession : MonoBehaviour
         if (InputSystem.actions == null)
             Debug.LogError("No hay Input Actions asignadas en Project Settings > Input System Package.");
         input.actions = InputSystem.actions;
+        PlayerInputUtility.EnsurePrivateActionAsset(input);
         input.defaultActionMap = "Player";
         input.notificationBehavior = PlayerNotifications.InvokeCSharpEvents;
         input.camera = camera;
