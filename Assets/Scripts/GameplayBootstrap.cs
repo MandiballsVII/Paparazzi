@@ -32,6 +32,7 @@ public class GameplayBootstrap : MonoBehaviour
         DisableSceneCamera();
         EnsureEscapeVehicleExtract();
         EnsureCelebritySpawner();
+        EnsureRoundSessionSpawner();
 
         switch (GameSessionConfig.Mode)
         {
@@ -108,6 +109,14 @@ public class GameplayBootstrap : MonoBehaviour
 
         if (vehicle != null)
             ArenaBuilder.EnsureEscapeVehicleExtractSetup(vehicle);
+    }
+
+    static void EnsureRoundSessionSpawner()
+    {
+        if (Object.FindAnyObjectByType<RoundSessionSpawner>() != null)
+            return;
+        var go = new GameObject("RoundSessionSpawner");
+        go.AddComponent<RoundSessionSpawner>();
     }
 
     void StartLocal()

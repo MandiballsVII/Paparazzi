@@ -66,9 +66,23 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
 
     public void Interact(GameObject interactor)
     {
-        if (!TryValidateExtraction(out string failReason, out bool victory))
+        NetworkRoundExtract extract = NetworkRoundExtract.Instance;
+        if (extract == null)
+            extract = FindAnyObjectByType<NetworkRoundExtract>();
+
+        if (extract != null)
         {
-            ShowFeedback(failReason);
+            extract.RequestExtractFrom(interactor, out string failReason);
+            // Online client: el fallo/éxito vuelve por ObserversRpc; failReason solo en host local.
+            if (!string.IsNullOrEmpty(failReason))
+                ShowFeedback(failReason);
+            return;
+        }
+
+        // Fallback local sin NetworkRoundExtract.
+        if (!TryValidateExtractionLocal(out string localFail, out bool victory))
+        {
+            ShowFeedback(localFail);
             return;
         }
 
@@ -76,7 +90,7 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
         MatchSessionExit.ExtractToLobby();
     }
 
-    bool TryValidateExtraction(out string failReason, out bool victory)
+    bool TryValidateExtractionLocal(out string failReason, out bool victory)
     {
         failReason = string.Empty;
         victory = false;
@@ -111,6 +125,8 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
         victory = RoundObjectiveState.HasVictoryPhotoOwnedByOccupant(inVan);
         return true;
     }
+
+    public void ShowFeedbackPublic(string message) => ShowFeedback(message);
 
     void ShowFeedback(string message)
     {

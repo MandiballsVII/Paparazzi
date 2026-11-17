@@ -164,7 +164,15 @@ public static class LobbyPlayerTransfer
 
     static void StripNetworkComponents(GameObject go)
     {
-        // Destruir behaviours de red; el clone no debe ser NetworkObject.
+        // NetworkObserver depende de NetworkObject: quitarlo antes.
+        FishNet.Observing.NetworkObserver[] observers =
+            go.GetComponentsInChildren<FishNet.Observing.NetworkObserver>(true);
+        for (int i = 0; i < observers.Length; i++)
+        {
+            if (observers[i] != null)
+                Object.DestroyImmediate(observers[i]);
+        }
+
         NetworkBehaviour[] behaviours = go.GetComponentsInChildren<NetworkBehaviour>(true);
         for (int i = 0; i < behaviours.Length; i++)
         {
