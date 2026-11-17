@@ -1,5 +1,6 @@
 using FishNet;
 using FishNet.Managing;
+using FishNet.Object;
 using FishNet.Transporting;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,6 +11,7 @@ public class GameplayBootstrap : MonoBehaviour
     [SerializeField] LocalSplitScreenSession localSession;
     [SerializeField] OnlineArenaSpawner onlineArenaSpawner;
     [SerializeField] GameObject celebrityPrefab;
+    [SerializeField] NetworkObject networkCelebrityPrefab;
     [SerializeField] CelebritySpawner celebritySpawner;
 
     // Cacheado: FormatLocalAddressesForDisplay() en OnGUI cada frame mataba al host (~8ms + GC).
@@ -70,14 +72,25 @@ public class GameplayBootstrap : MonoBehaviour
             }
         }
 
-        celebritySpawner.SetPrefab(celebrityPrefab);
+        if (networkCelebrityPrefab == null)
+        {
+#if UNITY_EDITOR
+            GameObject netGo = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Prefabs/NetworkCelebrity.prefab");
+            if (netGo != null)
+                networkCelebrityPrefab = netGo.GetComponent<NetworkObject>();
+#endif
+        }
+
+        celebritySpawner.SetLocalPrefab(celebrityPrefab);
+        celebritySpawner.SetNetworkPrefab(networkCelebrityPrefab);
     }
 
-    void SpawnCelebrityForSession()
+    void SpawnCelebrityForSession(bool networked)
     {
         EnsureCelebritySpawner();
         if (celebritySpawner != null)
-            celebritySpawner.SpawnAtLevelStart();
+            celebritySpawner.SpawnAtLevelStart(networked);
     }
 
     static void EnsureEscapeVehicleExtract()
@@ -114,7 +127,7 @@ public class GameplayBootstrap : MonoBehaviour
         localSession.enabled = true;
         localSession.BeginSession();
         cachedModeLabel = "LOCAL";
-        SpawnCelebrityForSession();
+        SpawnCelebrityForSession(networked: false);
     }
 
     void StartHost()
@@ -135,7 +148,7 @@ public class GameplayBootstrap : MonoBehaviour
         {
             Debug.Log($"Host iniciado en puerto {GameSessionConfig.DefaultPort}. {lanInfo}");
             Debug.Log("Clientes en el mismo PC: 127.0.0.1  ·  Clientes en LAN (portátil): usa la IP de arriba.");
-            SpawnCelebrityForSession();
+            SpawnCelebrityForSession(networked: true);
         }
         else
         {
@@ -168,8 +181,7 @@ public class GameplayBootstrap : MonoBehaviour
         if (args.ConnectionState == LocalConnectionState.Started)
         {
             Debug.Log("Cliente conectado al host.");
-            // Misma lógica que cuando estaba en escena: cada peer instancia su famoso local.
-            SpawnCelebrityForSession();
+            // El famoso lo spawnea solo el server; aquí llega por réplica FishNet.
         }
         else if (args.ConnectionState == LocalConnectionState.Stopped)
             Debug.LogWarning("Cliente desconectado / no pudo conectar. Comprueba IP, puerto, firewall y que el host esté en marcha.");

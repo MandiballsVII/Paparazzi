@@ -119,11 +119,15 @@ public class CelebrityBrain : MonoBehaviour
     Coroutine brainRoutine;
     bool visualsHidden;
     bool fleeAndStayHidden;
+    bool puppetMode;
 
     public AiState CurrentState => state;
     public bool IsPerformingControversialAction => state == AiState.PerformAction;
     public bool HasFledPermanently => fleeAndStayHidden;
     public float ActionCooldownRemaining => actionCooldownRemaining;
+    public float ActionTimeRemaining => actionTimeRemaining;
+    public bool IsPuppet => puppetMode;
+    public bool IsAuthorityRunning => brainRoutine != null && !puppetMode;
     public string CurrentActionId =>
         CelebrityRoundState.Instance != null && CelebrityRoundState.Instance.HasSelectedAction
             ? CelebrityRoundState.Instance.SelectedAction.Id
@@ -145,21 +149,56 @@ public class CelebrityBrain : MonoBehaviour
             patrol.SetBrainControlled(true);
     }
 
+    void Update()
+    {
+        Debug.Log($"[{name}] Update: {state}");
+        Debug.Log($"[{name}] Update: {actionCooldownRemaining:F1}s");
+        Debug.Log($"[{name}] Update: {actionTimeRemaining:F1}s");
+    }
+
     void OnEnable()
     {
         roamOrigin = transform.position;
-        CelebrityRoundState.GetOrCreate().EnsureSelection();
 
-        perception.SawTarget += OnSawTarget;
-        perception.HeardNoise += OnHeardNoise;
+        // Online: NetworkCelebrity decide authority vs puppet.
+        if (TryGetComponent(out NetworkCelebrity _))
+            return;
 
-        ResetRoutineAfterSpawnOrReappear(initial: true);
-        if (brainRoutine != null)
-            StopCoroutine(brainRoutine);
-        brainRoutine = StartCoroutine(BrainLoop());
+        BeginAuthorityBrain();
     }
 
     void OnDisable()
+    {
+        StopAuthorityBrain();
+        SetVisualsHidden(false);
+        if (agent != null && agent.enabled && agent.isOnNavMesh)
+            agent.isStopped = false;
+        if (agent != null)
+            agent.speed = defaultAgentSpeed;
+    }
+
+    /// <summary>IA local o server. Idempotente.</summary>
+    public void BeginAuthorityBrain()
+    {
+        puppetMode = false;
+        if (agent != null)
+            agent.enabled = true;
+
+        CelebrityRoundState.GetOrCreate().EnsureSelection();
+
+        perception.SawTarget -= OnSawTarget;
+        perception.HeardNoise -= OnHeardNoise;
+        perception.SawTarget += OnSawTarget;
+        perception.HeardNoise += OnHeardNoise;
+
+        if (brainRoutine != null)
+            return;
+
+        ResetRoutineAfterSpawnOrReappear(initial: true);
+        brainRoutine = StartCoroutine(BrainLoop());
+    }
+
+    public void StopAuthorityBrain()
     {
         perception.SawTarget -= OnSawTarget;
         perception.HeardNoise -= OnHeardNoise;
@@ -169,11 +208,45 @@ public class CelebrityBrain : MonoBehaviour
             StopCoroutine(brainRoutine);
             brainRoutine = null;
         }
+    }
 
-        SetVisualsHidden(false);
-        if (agent != null && agent.isOnNavMesh)
-            agent.isStopped = false;
-        agent.speed = defaultAgentSpeed;
+    /// <summary>Cliente online: no simula IA; refleja SyncVars + NetworkTransform.</summary>
+    public void SetPuppetMode(bool enabled)
+    {
+        puppetMode = enabled;
+        if (!enabled)
+            return;
+
+        StopAuthorityBrain();
+        if (agent != null)
+        {
+            if (agent.enabled && agent.isOnNavMesh)
+                agent.ResetPath();
+            agent.enabled = false;
+        }
+
+        // Clientes no necesitan escanear: la IA decide en el server.
+        if (TryGetComponent(out VisionSensor vision))
+            vision.enabled = false;
+        if (TryGetComponent(out HearingSensor hearing))
+            hearing.enabled = false;
+    }
+
+    public void ApplyNetworkState(
+        AiState aiState,
+        float cooldown,
+        float actionTime,
+        bool hidden,
+        bool permanentFlee)
+    {
+        state = aiState;
+        actionCooldownRemaining = cooldown;
+        actionTimeRemaining = actionTime;
+        fleeAndStayHidden = permanentFlee;
+        actionInProgress = aiState == AiState.PerformAction;
+
+        if (hidden != visualsHidden)
+            SetVisualsHidden(hidden);
     }
 
     void ResetRoutineAfterSpawnOrReappear(bool initial)

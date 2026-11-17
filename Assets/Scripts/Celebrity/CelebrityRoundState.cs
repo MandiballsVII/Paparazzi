@@ -25,7 +25,33 @@ public class CelebrityRoundState : MonoBehaviour
         }
 
         Instance = this;
-        EnsureSelection();
+
+        // Online client: la selección la manda el server vía NetworkCelebrity.
+        // Host/local: elegir aquí (el Celebrity de escena/spawner la reutiliza).
+        if (GameSessionConfig.Mode != GamePlayMode.OnlineClient)
+            EnsureSelection();
+    }
+
+    /// <summary>Aplica la selección replicada desde el server (clientes online).</summary>
+    public void ApplyNetworkSelection(int actionIndex, bool hasLocation, Vector3 locationPoint)
+    {
+        if (!CelebrityActionCatalog.TryGet(actionIndex, out CelebrityActionDefinition action))
+            return;
+
+        SelectedAction = action;
+        HasSelectedAction = true;
+        HasLocationPoint = hasLocation && action.RequiresLocation;
+        LocationPoint = HasLocationPoint ? locationPoint : Vector3.zero;
+        LocationRoomName = HasLocationPoint ? "NetworkLocation" : string.Empty;
+
+        if (logSelection)
+        {
+            Debug.Log(
+                HasLocationPoint
+                    ? $"[CelebrityRound] Sync red: {SelectedAction.Id} @ {LocationPoint}"
+                    : $"[CelebrityRound] Sync red: {SelectedAction.Id}",
+                this);
+        }
     }
 
     void OnDestroy()

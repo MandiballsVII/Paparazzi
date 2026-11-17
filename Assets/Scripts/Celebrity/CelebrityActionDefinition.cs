@@ -31,4 +31,30 @@ public static class CelebrityActionCatalog
         int index = UnityEngine.Random.Range(0, PrototypeActions.Length);
         return PrototypeActions[index];
     }
+
+    public static int IndexOf(string actionId)
+    {
+        if (string.IsNullOrEmpty(actionId))
+            return -1;
+
+        for (int i = 0; i < PrototypeActions.Length; i++)
+        {
+            if (PrototypeActions[i].Id == actionId)
+                return i;
+        }
+
+        return -1;
+    }
+
+    public static bool TryGet(int index, out CelebrityActionDefinition action)
+    {
+        if (index < 0 || index >= PrototypeActions.Length)
+        {
+            action = default;
+            return false;
+        }
+
+        action = PrototypeActions[index];
+        return true;
+    }
 }
