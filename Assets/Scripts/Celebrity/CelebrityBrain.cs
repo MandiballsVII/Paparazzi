@@ -74,6 +74,10 @@ public class CelebrityBrain : MonoBehaviour
     [SerializeField]
     float fleeSearchRadius = 80f;
 
+    [SerializeField]
+    [Tooltip("Mínimo de huida visible antes de ocultarse (evita desaparecer en 1 frame tras foto).")]
+    float minFleeDuration = 2f;
+
     [Header("Patrulla")]
     [SerializeField]
     float roamRadius = 25f;
@@ -530,27 +534,55 @@ public class CelebrityBrain : MonoBehaviour
 
     IEnumerator FleeTick()
     {
-        agent.isStopped = false;
-        agent.speed = fleeSpeed;
+        if (agent != null)
+        {
+            agent.enabled = true;
+            agent.isStopped = false;
+            agent.speed = fleeSpeed;
+        }
 
-        Vector3 from = perception.LastSeenPosition;
-        if (perception.LastSeenTarget != null)
+        Vector3 from = perception != null ? perception.LastSeenPosition : transform.position;
+        if (perception != null && perception.LastSeenTarget != null)
             from = perception.LastSeenTarget.transform.position;
 
-        if (!TryFindFarthestPoint(from, out Vector3 fleePoint))
-            fleePoint = transform.position + transform.forward * 10f;
+        // Si no hay amenaza registrada (foto sin posición), huir "hacia atrás".
+        if ((from - transform.position).sqrMagnitude < 0.01f)
+            from = transform.position - transform.forward * 2f;
 
-        agent.SetDestination(fleePoint);
+        if (!TryFindFarthestPoint(from, out Vector3 fleePoint))
+            fleePoint = transform.position + (transform.position - from).normalized * 12f;
+
+        if (agent != null && agent.isOnNavMesh)
+            agent.SetDestination(fleePoint);
+
         if (logStates)
             Debug.Log($"[{name}] HUYE hacia {fleePoint}", this);
 
-        while (state == AiState.Flee && agent.pathPending)
+        float fleeStart = Time.time;
+
+        while (state == AiState.Flee && agent != null && agent.pathPending)
             yield return null;
 
-        while (state == AiState.Flee
-               && agent.isOnNavMesh
-               && agent.remainingDistance > agent.stoppingDistance + 0.2f)
+        while (state == AiState.Flee)
         {
+            float elapsed = Time.time - fleeStart;
+            bool minTimeDone = elapsed >= minFleeDuration;
+            bool arrived = agent != null
+                           && agent.enabled
+                           && agent.isOnNavMesh
+                           && !agent.pathPending
+                           && agent.hasPath
+                           && agent.pathStatus != NavMeshPathStatus.PathInvalid
+                           && agent.remainingDistance <= agent.stoppingDistance + 0.25f;
+            bool pathFailed = agent != null
+                              && agent.enabled
+                              && !agent.pathPending
+                              && (!agent.hasPath || agent.pathStatus == NavMeshPathStatus.PathInvalid);
+
+            // No ocultar hasta haber corrido el mínimo (salvo que ya no estemos en Flee).
+            if (minTimeDone && (arrived || pathFailed || elapsed >= minFleeDuration * 3f))
+                break;
+
             yield return null;
         }
 
@@ -612,17 +644,25 @@ public class CelebrityBrain : MonoBehaviour
     /// </summary>
     public void NotifyPhotographedDuringAction()
     {
+        NotifyPhotographedDuringAction(transform.position - transform.forward * 3f);
+    }
+
+    public void NotifyPhotographedDuringAction(Vector3 photographerWorldPosition)
+    {
         if (!isActiveAndEnabled || visualsHidden)
             return;
 
         fleeAndStayHidden = true;
+        if (perception != null)
+            perception.RegisterThreatPosition(photographerWorldPosition);
+
         if (logStates)
             Debug.Log($"[{name}] ¡Fotografiado en acción! Huida permanente.", this);
 
         if (state == AiState.Flee || state == AiState.Hidden)
             return;
 
-        InterruptForFlee();
+        InterruptForFlee("fotografiado");
     }
 
     void Reappear()
@@ -679,7 +719,7 @@ public class CelebrityBrain : MonoBehaviour
         InterruptForFlee();
     }
 
-    void InterruptForFlee()
+    void InterruptForFlee(string reason = "vió jugador")
     {
         // Cancela cualquier actividad (incluida acción). No se retoma tras huir.
         resumeActivity = InterruptedActivity.None;
@@ -687,7 +727,15 @@ public class CelebrityBrain : MonoBehaviour
         actionTimeRemaining = 0f;
         hasInvestigateTarget = false;
         investigateArmed = false;
-        SetState(AiState.Flee, "vió jugador");
+
+        if (agent != null)
+        {
+            agent.enabled = true;
+            agent.isStopped = false;
+            agent.speed = fleeSpeed;
+        }
+
+        SetState(AiState.Flee, reason);
     }
 
     void OnHeardNoise(NoiseEventData noise, float effectiveLoudness, int walls)

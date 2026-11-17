@@ -122,7 +122,8 @@ public class NetworkCelebrity : NetworkBehaviour
         if (force || !Mathf.Approximately(syncedActionTime.Value, brain.ActionTimeRemaining))
             syncedActionTime.Value = brain.ActionTimeRemaining;
 
-        bool hidden = brain.CurrentState == CelebrityBrain.AiState.Hidden || brain.HasFledPermanently;
+        // Solo Hidden oculta mesh. HasFledPermanently durante Flee no debe apagar visuales.
+        bool hidden = brain.CurrentState == CelebrityBrain.AiState.Hidden;
         if (force || syncedHidden.Value != hidden)
             syncedHidden.Value = hidden;
         if (force || syncedPermanentFlee.Value != brain.HasFledPermanently)
@@ -176,22 +177,22 @@ public class NetworkCelebrity : NetworkBehaviour
             ApplyRoundSelectionFromSync();
     }
 
-    public void RequestPhotographedDuringAction()
+    public void RequestPhotographedDuringAction(Vector3 photographerWorldPosition)
     {
         if (IsServerInitialized)
         {
-            brain.NotifyPhotographedDuringAction();
+            brain.NotifyPhotographedDuringAction(photographerWorldPosition);
             PushSyncFromBrain(force: true);
             return;
         }
 
-        PhotographedDuringActionServerRpc();
+        PhotographedDuringActionServerRpc(photographerWorldPosition);
     }
 
     [ServerRpc(RequireOwnership = false)]
-    void PhotographedDuringActionServerRpc()
+    void PhotographedDuringActionServerRpc(Vector3 photographerWorldPosition)
     {
-        brain.NotifyPhotographedDuringAction();
+        brain.NotifyPhotographedDuringAction(photographerWorldPosition);
         PushSyncFromBrain(force: true);
     }
 }
