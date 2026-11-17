@@ -27,11 +27,13 @@ public class PlayerMovement : MonoBehaviour
     InputAction jumpAction;
     InputAction sprintAction;
     InputAction crouchAction;
+    InputAction crouchToggleAction;
 
     Vector3 velocity;
     float yaw;
     float pitch;
     bool jumpQueued;
+    bool crouchToggleLatched;
 
     public Camera PlayerCamera { get; private set; }
 
@@ -64,6 +66,7 @@ public class PlayerMovement : MonoBehaviour
         jumpAction = actions["Jump"];
         sprintAction = actions["Sprint"];
         crouchAction = actions["Crouch"];
+        crouchToggleAction = actions.FindAction("CrouchToggle", false);
         jumpAction.performed += OnJump;
     }
 
@@ -86,7 +89,10 @@ public class PlayerMovement : MonoBehaviour
             TryGetComponent(out health);
 
         if (health != null && health.IsDead)
+        {
+            crouchToggleLatched = false;
             return;
+        }
 
         if (pauseMenu != null && pauseMenu.IsOpen)
             return;
@@ -101,10 +107,19 @@ public class PlayerMovement : MonoBehaviour
     {
         if (stance == null)
             TryGetComponent(out stance);
-        if (stance == null || crouchAction == null)
+        if (stance == null)
             return;
 
-        stance.SetCrouching(crouchAction.IsPressed());
+        if (crouchToggleAction != null && crouchToggleAction.WasPressedThisFrame())
+            crouchToggleLatched = !crouchToggleLatched;
+
+        bool holdCrouch = crouchAction != null && crouchAction.IsPressed();
+        bool wantCrouch = holdCrouch || crouchToggleLatched;
+        stance.SetCrouching(wantCrouch);
+
+        // Techo: no pudo levantarse → mantener latch de toggle.
+        if (!wantCrouch && stance.IsCrouching)
+            crouchToggleLatched = true;
     }
 
     void Look()
