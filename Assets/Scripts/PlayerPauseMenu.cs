@@ -129,6 +129,12 @@ public class PlayerPauseMenu : MonoBehaviour
 
     void OnPausePerformed(InputAction.CallbackContext context)
     {
+        if (MatchSessionExit.IsExtractInProgress)
+            return;
+
+        if (!CanSwitchActionMaps())
+            return;
+
         if (isOpen)
             CloseMenu();
         else
@@ -139,6 +145,13 @@ public class PlayerPauseMenu : MonoBehaviour
     {
         if (!isOpen)
             return;
+
+        if (MatchSessionExit.IsExtractInProgress)
+        {
+            ForceCloseWithoutInputRestore();
+            UnbindCancel();
+            return;
+        }
 
         if (showingPhotos)
             ShowMainPanel();
@@ -151,6 +164,9 @@ public class PlayerPauseMenu : MonoBehaviour
         if (isOpen)
             return;
 
+        if (MatchSessionExit.IsExtractInProgress || !CanSwitchActionMaps())
+            return;
+
         EnsureUi();
         FitRootToCameraViewport();
         isOpen = true;
@@ -158,13 +174,10 @@ public class PlayerPauseMenu : MonoBehaviour
         rootPanel.SetActive(true);
         ShowMainPanel();
 
-        if (playerInput != null && playerInput.actions != null)
-        {
-            playerInput.SwitchCurrentActionMap("UI");
-            // Mantener Pause activo para cerrar con Esc / Start aunque el mapa Player esté off.
-            InputAction pause = playerInput.actions.FindAction("Pause", false);
-            pause?.Enable();
-        }
+        playerInput.SwitchCurrentActionMap("UI");
+        // Mantener Pause activo para cerrar con Esc / Start aunque el mapa Player esté off.
+        InputAction pause = playerInput.actions.FindAction("Pause", false);
+        pause?.Enable();
 
         BindCancel();
         RefreshCursorForMenu(true);
@@ -183,10 +196,18 @@ public class PlayerPauseMenu : MonoBehaviour
 
         UnbindCancel();
 
-        if (playerInput != null && playerInput.actions != null && playerInput.gameObject.activeInHierarchy)
+        if (CanSwitchActionMaps())
             playerInput.SwitchCurrentActionMap("Player");
 
         RefreshCursorForMenu(false);
+    }
+
+    bool CanSwitchActionMaps()
+    {
+        return playerInput != null
+               && playerInput.enabled
+               && playerInput.actions != null
+               && playerInput.gameObject.activeInHierarchy;
     }
 
     void ForceCloseWithoutInputRestore()

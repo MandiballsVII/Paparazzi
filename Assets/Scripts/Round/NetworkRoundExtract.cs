@@ -16,6 +16,8 @@ public class NetworkRoundExtract : NetworkBehaviour
     [SerializeField]
     VehicleInteriorZone interiorZone;
 
+    bool extractCommitted;
+
     public bool HasVictoryPhoto =>
         IsNetworkSessionActive()
             ? syncedHasVictoryPhoto.Value
@@ -60,15 +62,21 @@ public class NetworkRoundExtract : NetworkBehaviour
 
         if (IsServerInitialized)
         {
+            if (extractCommitted || MatchSessionExit.IsExtractInProgress)
+                return;
+
             if (!ValidateOccupancy(out failReason, out bool victory))
             {
                 ExtractFailedObserversRpc(failReason);
                 return;
             }
 
-            BeginExtractObserversRpc(victory);
+            CommitExtract(victory);
             return;
         }
+
+        if (extractCommitted || MatchSessionExit.IsExtractInProgress)
+            return;
 
         RequestExtractServerRpc();
     }
@@ -76,18 +84,31 @@ public class NetworkRoundExtract : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     void RequestExtractServerRpc(FishNet.Connection.NetworkConnection caller = null)
     {
+        if (extractCommitted || MatchSessionExit.IsExtractInProgress)
+            return;
+
         if (!ValidateOccupancy(out string failReason, out bool victory))
         {
             ExtractFailedObserversRpc(failReason);
             return;
         }
 
+        CommitExtract(victory);
+    }
+
+    void CommitExtract(bool victory)
+    {
+        if (extractCommitted)
+            return;
+
+        extractCommitted = true;
         BeginExtractObserversRpc(victory);
     }
 
     [ObserversRpc]
     void BeginExtractObserversRpc(bool victory)
     {
+        extractCommitted = true;
         RoundResultStore.SetExtractResult(victory);
         MatchSessionExit.ExtractToLobby();
     }
