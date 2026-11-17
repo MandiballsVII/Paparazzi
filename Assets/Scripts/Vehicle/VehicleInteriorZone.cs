@@ -2,68 +2,73 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Zona interior de la furgoneta (mismo trigger que revive). Rastrea ocupantes.
+/// Zona interior de la furgoneta. Ocupación por posición del transform
+/// (no depende de CharacterController activo: remotes online lo tienen off).
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class VehicleInteriorZone : MonoBehaviour
 {
-    readonly HashSet<PlayerHealth> occupants = new();
+    [SerializeField]
+    float boundsMargin = 0.2f;
+
+    [SerializeField]
+    float sampleHeight = 0.9f;
+
     readonly List<PlayerHealth> livingBuffer = new(8);
-    readonly List<PlayerHealth> removeBuffer = new(8);
+
+    BoxCollider box;
+
+    void Awake()
+    {
+        TryGetComponent(out box);
+    }
 
     public IReadOnlyList<PlayerHealth> GetLivingOccupants()
     {
         livingBuffer.Clear();
-        removeBuffer.Clear();
 
-        foreach (PlayerHealth health in occupants)
+        if (box == null && !TryGetComponent(out box))
+            return livingBuffer;
+
+        PlayerHealth[] all = Object.FindObjectsByType<PlayerHealth>(FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
         {
-            if (health == null)
-            {
-                removeBuffer.Add(health);
+            PlayerHealth health = all[i];
+            if (health == null || health.IsDead)
                 continue;
-            }
 
-            if (!health.IsDead)
+            // Pies + pecho: evita fallos si el pivot está en el suelo o el techo del van es bajo.
+            Vector3 feet = health.transform.position;
+            Vector3 chest = feet + Vector3.up * sampleHeight;
+            if (IsWorldPointInside(feet) || IsWorldPointInside(chest))
                 livingBuffer.Add(health);
         }
-
-        for (int i = 0; i < removeBuffer.Count; i++)
-            occupants.Remove(removeBuffer[i]);
 
         return livingBuffer;
     }
 
     public bool IsInside(PlayerHealth health)
     {
-        return health != null && occupants.Contains(health);
+        if (health == null)
+            return false;
+
+        IReadOnlyList<PlayerHealth> living = GetLivingOccupants();
+        for (int i = 0; i < living.Count; i++)
+        {
+            if (living[i] == health)
+                return true;
+        }
+
+        return false;
     }
 
-    void OnTriggerEnter(Collider other)
+    bool IsWorldPointInside(Vector3 worldPoint)
     {
-        PlayerHealth health = ResolveHealth(other);
-        if (health != null)
-            occupants.Add(health);
-    }
-
-    void OnTriggerExit(Collider other)
-    {
-        PlayerHealth health = ResolveHealth(other);
-        if (health != null)
-            occupants.Remove(health);
-    }
-
-    void OnTriggerStay(Collider other)
-    {
-        PlayerHealth health = ResolveHealth(other);
-        if (health != null)
-            occupants.Add(health);
-    }
-
-    static PlayerHealth ResolveHealth(Collider other)
-    {
-        if (other == null)
-            return null;
-        return other.GetComponentInParent<PlayerHealth>();
+        // Caja orientada (local): fiable si la furgoneta está rotada.
+        Vector3 local = box.transform.InverseTransformPoint(worldPoint) - box.center;
+        Vector3 half = box.size * 0.5f + Vector3.one * boundsMargin;
+        return Mathf.Abs(local.x) <= half.x
+               && Mathf.Abs(local.y) <= half.y
+               && Mathf.Abs(local.z) <= half.z;
     }
 }

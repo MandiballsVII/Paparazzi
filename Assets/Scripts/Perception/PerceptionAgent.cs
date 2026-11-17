@@ -112,6 +112,14 @@ public class PerceptionAgent : MonoBehaviour
             Debug.Log($"[{name}] VE a {target.name} @ {aimPosition}", this);
     }
 
+    /// <summary>Amenaza sin visión (p.ej. foto): para calcular dirección de huida.</summary>
+    public void RegisterThreatPosition(Vector3 worldPosition)
+    {
+        LastSeenTarget = null;
+        LastSeenPosition = worldPosition;
+        LastSeenTime = Time.time;
+    }
+
     public void NotifyHeard(in NoiseEventData noise, float effectiveLoudness, int wallsCrossed)
     {
         if (!hasHearing)

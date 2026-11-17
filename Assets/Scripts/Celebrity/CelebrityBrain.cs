@@ -74,6 +74,10 @@ public class CelebrityBrain : MonoBehaviour
     [SerializeField]
     float fleeSearchRadius = 80f;
 
+    [SerializeField]
+    [Tooltip("Mínimo de huida visible antes de ocultarse (evita desaparecer en 1 frame tras foto).")]
+    float minFleeDuration = 2f;
+
     [Header("Patrulla")]
     [SerializeField]
     float roamRadius = 25f;
@@ -119,11 +123,15 @@ public class CelebrityBrain : MonoBehaviour
     Coroutine brainRoutine;
     bool visualsHidden;
     bool fleeAndStayHidden;
+    bool puppetMode;
 
     public AiState CurrentState => state;
     public bool IsPerformingControversialAction => state == AiState.PerformAction;
     public bool HasFledPermanently => fleeAndStayHidden;
     public float ActionCooldownRemaining => actionCooldownRemaining;
+    public float ActionTimeRemaining => actionTimeRemaining;
+    public bool IsPuppet => puppetMode;
+    public bool IsAuthorityRunning => brainRoutine != null && !puppetMode;
     public string CurrentActionId =>
         CelebrityRoundState.Instance != null && CelebrityRoundState.Instance.HasSelectedAction
             ? CelebrityRoundState.Instance.SelectedAction.Id
@@ -145,21 +153,56 @@ public class CelebrityBrain : MonoBehaviour
             patrol.SetBrainControlled(true);
     }
 
+    void Update()
+    {
+        Debug.Log($"[{name}] Update: {state}");
+        Debug.Log($"[{name}] Update: {actionCooldownRemaining:F1}s");
+        Debug.Log($"[{name}] Update: {actionTimeRemaining:F1}s");
+    }
+
     void OnEnable()
     {
         roamOrigin = transform.position;
-        CelebrityRoundState.GetOrCreate().EnsureSelection();
 
-        perception.SawTarget += OnSawTarget;
-        perception.HeardNoise += OnHeardNoise;
+        // Online: NetworkCelebrity decide authority vs puppet.
+        if (TryGetComponent(out NetworkCelebrity _))
+            return;
 
-        ResetRoutineAfterSpawnOrReappear(initial: true);
-        if (brainRoutine != null)
-            StopCoroutine(brainRoutine);
-        brainRoutine = StartCoroutine(BrainLoop());
+        BeginAuthorityBrain();
     }
 
     void OnDisable()
+    {
+        StopAuthorityBrain();
+        SetVisualsHidden(false);
+        if (agent != null && agent.enabled && agent.isOnNavMesh)
+            agent.isStopped = false;
+        if (agent != null)
+            agent.speed = defaultAgentSpeed;
+    }
+
+    /// <summary>IA local o server. Idempotente.</summary>
+    public void BeginAuthorityBrain()
+    {
+        puppetMode = false;
+        if (agent != null)
+            agent.enabled = true;
+
+        CelebrityRoundState.GetOrCreate().EnsureSelection();
+
+        perception.SawTarget -= OnSawTarget;
+        perception.HeardNoise -= OnHeardNoise;
+        perception.SawTarget += OnSawTarget;
+        perception.HeardNoise += OnHeardNoise;
+
+        if (brainRoutine != null)
+            return;
+
+        ResetRoutineAfterSpawnOrReappear(initial: true);
+        brainRoutine = StartCoroutine(BrainLoop());
+    }
+
+    public void StopAuthorityBrain()
     {
         perception.SawTarget -= OnSawTarget;
         perception.HeardNoise -= OnHeardNoise;
@@ -169,11 +212,45 @@ public class CelebrityBrain : MonoBehaviour
             StopCoroutine(brainRoutine);
             brainRoutine = null;
         }
+    }
 
-        SetVisualsHidden(false);
-        if (agent != null && agent.isOnNavMesh)
-            agent.isStopped = false;
-        agent.speed = defaultAgentSpeed;
+    /// <summary>Cliente online: no simula IA; refleja SyncVars + NetworkTransform.</summary>
+    public void SetPuppetMode(bool enabled)
+    {
+        puppetMode = enabled;
+        if (!enabled)
+            return;
+
+        StopAuthorityBrain();
+        if (agent != null)
+        {
+            if (agent.enabled && agent.isOnNavMesh)
+                agent.ResetPath();
+            agent.enabled = false;
+        }
+
+        // Clientes no necesitan escanear: la IA decide en el server.
+        if (TryGetComponent(out VisionSensor vision))
+            vision.enabled = false;
+        if (TryGetComponent(out HearingSensor hearing))
+            hearing.enabled = false;
+    }
+
+    public void ApplyNetworkState(
+        AiState aiState,
+        float cooldown,
+        float actionTime,
+        bool hidden,
+        bool permanentFlee)
+    {
+        state = aiState;
+        actionCooldownRemaining = cooldown;
+        actionTimeRemaining = actionTime;
+        fleeAndStayHidden = permanentFlee;
+        actionInProgress = aiState == AiState.PerformAction;
+
+        if (hidden != visualsHidden)
+            SetVisualsHidden(hidden);
     }
 
     void ResetRoutineAfterSpawnOrReappear(bool initial)
@@ -457,27 +534,55 @@ public class CelebrityBrain : MonoBehaviour
 
     IEnumerator FleeTick()
     {
-        agent.isStopped = false;
-        agent.speed = fleeSpeed;
+        if (agent != null)
+        {
+            agent.enabled = true;
+            agent.isStopped = false;
+            agent.speed = fleeSpeed;
+        }
 
-        Vector3 from = perception.LastSeenPosition;
-        if (perception.LastSeenTarget != null)
+        Vector3 from = perception != null ? perception.LastSeenPosition : transform.position;
+        if (perception != null && perception.LastSeenTarget != null)
             from = perception.LastSeenTarget.transform.position;
 
-        if (!TryFindFarthestPoint(from, out Vector3 fleePoint))
-            fleePoint = transform.position + transform.forward * 10f;
+        // Si no hay amenaza registrada (foto sin posición), huir "hacia atrás".
+        if ((from - transform.position).sqrMagnitude < 0.01f)
+            from = transform.position - transform.forward * 2f;
 
-        agent.SetDestination(fleePoint);
+        if (!TryFindFarthestPoint(from, out Vector3 fleePoint))
+            fleePoint = transform.position + (transform.position - from).normalized * 12f;
+
+        if (agent != null && agent.isOnNavMesh)
+            agent.SetDestination(fleePoint);
+
         if (logStates)
             Debug.Log($"[{name}] HUYE hacia {fleePoint}", this);
 
-        while (state == AiState.Flee && agent.pathPending)
+        float fleeStart = Time.time;
+
+        while (state == AiState.Flee && agent != null && agent.pathPending)
             yield return null;
 
-        while (state == AiState.Flee
-               && agent.isOnNavMesh
-               && agent.remainingDistance > agent.stoppingDistance + 0.2f)
+        while (state == AiState.Flee)
         {
+            float elapsed = Time.time - fleeStart;
+            bool minTimeDone = elapsed >= minFleeDuration;
+            bool arrived = agent != null
+                           && agent.enabled
+                           && agent.isOnNavMesh
+                           && !agent.pathPending
+                           && agent.hasPath
+                           && agent.pathStatus != NavMeshPathStatus.PathInvalid
+                           && agent.remainingDistance <= agent.stoppingDistance + 0.25f;
+            bool pathFailed = agent != null
+                              && agent.enabled
+                              && !agent.pathPending
+                              && (!agent.hasPath || agent.pathStatus == NavMeshPathStatus.PathInvalid);
+
+            // No ocultar hasta haber corrido el mínimo (salvo que ya no estemos en Flee).
+            if (minTimeDone && (arrived || pathFailed || elapsed >= minFleeDuration * 3f))
+                break;
+
             yield return null;
         }
 
@@ -539,17 +644,25 @@ public class CelebrityBrain : MonoBehaviour
     /// </summary>
     public void NotifyPhotographedDuringAction()
     {
+        NotifyPhotographedDuringAction(transform.position - transform.forward * 3f);
+    }
+
+    public void NotifyPhotographedDuringAction(Vector3 photographerWorldPosition)
+    {
         if (!isActiveAndEnabled || visualsHidden)
             return;
 
         fleeAndStayHidden = true;
+        if (perception != null)
+            perception.RegisterThreatPosition(photographerWorldPosition);
+
         if (logStates)
             Debug.Log($"[{name}] ¡Fotografiado en acción! Huida permanente.", this);
 
         if (state == AiState.Flee || state == AiState.Hidden)
             return;
 
-        InterruptForFlee();
+        InterruptForFlee("fotografiado");
     }
 
     void Reappear()
@@ -606,7 +719,7 @@ public class CelebrityBrain : MonoBehaviour
         InterruptForFlee();
     }
 
-    void InterruptForFlee()
+    void InterruptForFlee(string reason = "vió jugador")
     {
         // Cancela cualquier actividad (incluida acción). No se retoma tras huir.
         resumeActivity = InterruptedActivity.None;
@@ -614,7 +727,15 @@ public class CelebrityBrain : MonoBehaviour
         actionTimeRemaining = 0f;
         hasInvestigateTarget = false;
         investigateArmed = false;
-        SetState(AiState.Flee, "vió jugador");
+
+        if (agent != null)
+        {
+            agent.enabled = true;
+            agent.isStopped = false;
+            agent.speed = fleeSpeed;
+        }
+
+        SetState(AiState.Flee, reason);
     }
 
     void OnHeardNoise(NoiseEventData noise, float effectiveLoudness, int walls)

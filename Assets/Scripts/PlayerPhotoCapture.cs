@@ -108,7 +108,13 @@ public class PlayerPhotoCapture : MonoBehaviour
         {
             RoundObjectiveState.NotifyControversialActionShot(shot);
             if (celebrity != null)
-                celebrity.NotifyPhotographedDuringAction();
+            {
+                Vector3 photographerPos = transform.position;
+                if (celebrity.TryGetComponent(out NetworkCelebrity netCelebrity))
+                    netCelebrity.RequestPhotographedDuringAction(photographerPos);
+                else
+                    celebrity.NotifyPhotographedDuringAction(photographerPos);
+            }
         }
 
         return photo;

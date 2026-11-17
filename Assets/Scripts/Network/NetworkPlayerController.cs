@@ -58,12 +58,14 @@ public class NetworkPlayerController : NetworkBehaviour
     InputAction jumpAction;
     InputAction sprintAction;
     InputAction crouchAction;
+    InputAction crouchToggleAction;
 
     Vector3 velocity;
     float yaw;
     float pitch;
     bool jumpQueued;
     bool inputBound;
+    bool crouchToggleLatched;
 
     public Camera PlayerCamera => playerCamera;
 
@@ -308,6 +310,7 @@ public class NetworkPlayerController : NetworkBehaviour
         jumpAction = playerInput.actions["Jump"];
         sprintAction = playerInput.actions["Sprint"];
         crouchAction = playerInput.actions["Crouch"];
+        crouchToggleAction = playerInput.actions.FindAction("CrouchToggle", false);
         jumpAction.performed += OnJump;
         inputBound = true;
     }
@@ -337,7 +340,10 @@ public class NetworkPlayerController : NetworkBehaviour
         if (health == null)
             TryGetComponent(out health);
         if (health != null && health.IsDead)
+        {
+            crouchToggleLatched = false;
             return;
+        }
 
         if (pauseMenu != null && pauseMenu.IsOpen)
             return;
@@ -350,18 +356,26 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void UpdateCrouch()
     {
-        if (crouchAction == null || stance == null)
+        if (stance == null)
             return;
 
-        bool wantCrouch = crouchAction.IsPressed();
+        if (crouchToggleAction != null && crouchToggleAction.WasPressedThisFrame())
+            crouchToggleLatched = !crouchToggleLatched;
+
+        bool holdCrouch = crouchAction != null && crouchAction.IsPressed();
+        bool wantCrouch = holdCrouch || crouchToggleLatched;
         if (wantCrouch == stance.IsCrouching && wantCrouch == isCrouching.Value)
             return;
 
         bool before = stance.IsCrouching;
         stance.SetCrouching(wantCrouch);
-        // Si no puede levantarse (techo), no mandamos el SyncVar.
+        // Si no puede levantarse (techo), no mandamos el SyncVar y mantenemos latch.
         if (stance.IsCrouching == before && wantCrouch != before)
+        {
+            if (!wantCrouch && stance.IsCrouching)
+                crouchToggleLatched = true;
             return;
+        }
 
         if (stance.IsCrouching != isCrouching.Value)
             SetCrouchingServerRpc(stance.IsCrouching);
