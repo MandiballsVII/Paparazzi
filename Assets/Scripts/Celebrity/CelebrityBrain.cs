@@ -153,12 +153,12 @@ public class CelebrityBrain : MonoBehaviour
             patrol.SetBrainControlled(true);
     }
 
-    void Update()
+    /* void Update()
     {
         Debug.Log($"[{name}] Update: {state}");
         Debug.Log($"[{name}] Update: {actionCooldownRemaining:F1}s");
         Debug.Log($"[{name}] Update: {actionTimeRemaining:F1}s");
-    }
+    } */
 
     void OnEnable()
     {

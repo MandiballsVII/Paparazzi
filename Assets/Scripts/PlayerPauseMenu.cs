@@ -177,14 +177,20 @@ public class PlayerPauseMenu : MonoBehaviour
             return;
         }
 
+        // Solo fotos → principal. Cerrar pausa lo hace Pause (Esc/Start).
+        // Si Cancel también cerrara el principal, Esc dispararía Cancel+Pause
+        // (cierra y reabre en el mismo frame).
         if (showingPhotos)
             ShowMainPanel();
-        else
-            CloseMenu();
     }
 
     bool IsContextFromThisPlayer(InputAction.CallbackContext context)
     {
+        // Online: PlayerInput suele no tener devices emparejados → no filtrar.
+        // Local/Gym: solo aceptar input de los devices de este jugador.
+        if (playerInput == null || playerInput.devices.Count == 0)
+            return true;
+
         InputDevice device = context.control != null ? context.control.device : null;
         return PlayerInputUtility.IsDevicePairedToPlayer(playerInput, device);
     }

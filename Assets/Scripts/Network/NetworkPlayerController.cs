@@ -291,7 +291,8 @@ public class NetworkPlayerController : NetworkBehaviour
         if (pauseMenu != null)
         {
             pauseMenu.Initialize(playerCamera);
-            pauseMenu.BindPause();
+            // Tras EnsurePrivateActionAsset hay que reenganchar al asset clonado.
+            pauseMenu.RebindActionsForPrivateAsset();
         }
 
         if (TryGetComponent(out PlayerHealthHud hud))
