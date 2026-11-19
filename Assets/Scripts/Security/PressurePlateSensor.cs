@@ -6,7 +6,7 @@ using UnityEngine.Events;
 
 /// <summary>
 /// Sensor de presión: jugadores (lista PerceptionTarget + owner) y props (trigger server); NPCs no.
-/// Dispara al notar peso; tras cooldown puede volver a disparar.
+/// Si cuelga de un TrapController, el cooldown/ciclo lo lleva la trampa.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class PressurePlateSensor : NetworkBehaviour
@@ -35,16 +35,26 @@ public class PressurePlateSensor : NetworkBehaviour
     [SerializeField]
     BoxCollider triggerCollider;
 
+    TrapController ownerTrap;
     float nextReadyUnscaledTime;
     float nextPlayerPollUnscaledTime;
     bool loggedMissingSpawn;
 
     public event Action<string, bool> Activated;
 
-    public float CooldownSeconds => cooldownSeconds;
-    public bool IsReady => Time.unscaledTime >= nextReadyUnscaledTime;
+    public float CooldownSeconds => ownerTrap != null ? ownerTrap.CooldownSeconds : cooldownSeconds;
 
-    void Reset()
+    public bool IsReady
+    {
+        get
+        {
+            if (ownerTrap != null)
+                return ownerTrap.IsArmed;
+            return Time.unscaledTime >= nextReadyUnscaledTime;
+        }
+    }
+
+    public new void Reset()
     {
         Collider col = GetComponent<Collider>();
         if (col != null)
@@ -66,6 +76,7 @@ public class PressurePlateSensor : NetworkBehaviour
         if (triggerCollider == null)
             TryGetComponent(out triggerCollider);
 
+        ownerTrap = GetComponentInParent<TrapController>();
         EnsureKinematicBody();
     }
 
@@ -86,11 +97,31 @@ public class PressurePlateSensor : NetworkBehaviour
 
     void Start()
     {
+        // Bajo trampilla: el material lo aplica TrapController desde el Floor adyacente.
+        if (ownerTrap != null)
+            return;
+
         TrySampleSurfaceMaterial();
+    }
+
+    public void ApplySharedMaterial(Material material)
+    {
+        if (material == null)
+            return;
+
+        if (plateRenderer == null)
+            TryGetComponent(out plateRenderer);
+        if (plateRenderer == null)
+            return;
+
+        plateRenderer.sharedMaterial = material;
     }
 
     void Update()
     {
+        if (ownerTrap != null && !ownerTrap.IsArmed)
+            return;
+
         if (Time.unscaledTime < nextPlayerPollUnscaledTime)
             return;
 
@@ -111,6 +142,10 @@ public class PressurePlateSensor : NetworkBehaviour
         {
             PressurePlateSensor plate = plates[i];
             if (plate == null)
+                continue;
+
+            // Placas hijas de TrapController las reactiva TrapController.ActivateAllForOfflinePlay.
+            if (plate.GetComponentInParent<TrapController>() != null)
                 continue;
 
             if (plate.TryGetComponent(out NetworkObject nob))
@@ -221,6 +256,18 @@ public class PressurePlateSensor : NetworkBehaviour
 
     void ReportPlayerActivation(string activatorName)
     {
+        if (ownerTrap != null)
+        {
+            if (!IsNetworkSessionActive() || IsServerInitialized)
+            {
+                ProcessActivation(activatorName);
+                return;
+            }
+
+            ownerTrap.RequestTriggerFromClient(activatorName);
+            return;
+        }
+
         if (!IsNetworkSessionActive())
         {
             ProcessActivation(activatorName);
@@ -239,14 +286,13 @@ public class PressurePlateSensor : NetworkBehaviour
             return;
         }
 
-        // Placa de escena sin spawn: el ServerRpc no puede salir. Evitar silencio total.
         if (loggedMissingSpawn)
             return;
 
         loggedMissingSpawn = true;
         Debug.LogWarning(
             $"[PressurePlate:{gameObject.name}] cliente sin IsSpawned; no se puede avisar al server. " +
-            "Reserialize NetworkObject de la placa en la escena.");
+            "Reserialize NetworkObject de la placa/trampa en la escena.");
     }
 
     void OnTriggerEnter(Collider other)
@@ -281,9 +327,18 @@ public class PressurePlateSensor : NetworkBehaviour
 
     void ProcessActivation(string activatorName)
     {
-        bool trapActivated = IsReady;
-        if (trapActivated)
-            nextReadyUnscaledTime = Time.unscaledTime + Mathf.Max(0f, cooldownSeconds);
+        bool trapActivated;
+
+        if (ownerTrap != null)
+        {
+            trapActivated = ownerTrap.TryTrigger(activatorName);
+        }
+        else
+        {
+            trapActivated = IsReady;
+            if (trapActivated)
+                nextReadyUnscaledTime = Time.unscaledTime + Mathf.Max(0f, cooldownSeconds);
+        }
 
         LogActivation(activatorName, trapActivated);
         RaiseActivation(activatorName, trapActivated);

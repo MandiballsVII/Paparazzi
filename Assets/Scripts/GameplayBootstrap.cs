@@ -137,14 +137,15 @@ public class GameplayBootstrap : MonoBehaviour
         localSession.BeginSession();
         cachedModeLabel = "LOCAL";
         SpawnCelebrityForSession(networked: false);
-        // FishNet desactiva NetworkObjects de escena sin red; reactivar placas offline.
-        StartCoroutine(ActivatePressurePlatesOfflineNextFrame());
+        // FishNet desactiva NetworkObjects de escena sin red; reactivar trampas/placas offline.
+        StartCoroutine(ActivateSecuritySensorsOfflineNextFrame());
     }
 
-    System.Collections.IEnumerator ActivatePressurePlatesOfflineNextFrame()
+    System.Collections.IEnumerator ActivateSecuritySensorsOfflineNextFrame()
     {
         // Tras NetworkObject.Start (que hace SetActive false).
         yield return null;
+        TrapController.ActivateAllForOfflinePlay();
         PressurePlateSensor.ActivateAllForOfflinePlay();
     }
 
