@@ -1,6 +1,9 @@
 using System.Collections;
+using System.Collections.Generic;
 using FishNet;
 using FishNet.Managing;
+using FishNet.Managing.Scened;
+using FishNet.Object;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -10,7 +13,7 @@ public static class MatchSessionExit
     const string LobbySceneName = "Lobby";
 
     /// <summary>
-    /// Tiempo para que el ObserversRpc de extract llegue a clients antes de tumbar el listen-server.
+    /// Tiempo para que el ObserversRpc de extract llegue a clients antes de cargar escenas (host).
     /// </summary>
     const float HostExtractNetworkFlushSeconds = 0.4f;
     const int HostExtractFlushFrames = 3;
@@ -41,7 +44,7 @@ public static class MatchSessionExit
         GameSessionConfig.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        SceneManager.LoadScene(MainMenuSceneName);
+        UnityEngine.SceneManagement.SceneManager.LoadScene(MainMenuSceneName);
     }
 
     public static void QuitGame()
@@ -57,6 +60,14 @@ public static class MatchSessionExit
 #else
         Application.Quit();
 #endif
+    }
+
+    static bool IsOnlineNetworkSession()
+    {
+        NetworkManager nm = InstanceFinder.NetworkManager;
+        if (nm == null)
+            return false;
+        return nm.IsServerStarted || nm.IsClientStarted;
     }
 
     static void StopAndDestroyNetworkManager()
@@ -77,37 +88,101 @@ public static class MatchSessionExit
         Object.Destroy(networkManager.gameObject);
     }
 
+    static NetworkObject[] CollectSpawnedPlayerNetworkObjects()
+    {
+        var list = new List<NetworkObject>(8);
+        NetworkPlayerController[] players =
+            Object.FindObjectsByType<NetworkPlayerController>(FindObjectsSortMode.None);
+
+        for (int i = 0; i < players.Length; i++)
+        {
+            NetworkPlayerController player = players[i];
+            if (player == null)
+                continue;
+            if (!player.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
+                continue;
+            list.Add(nob);
+        }
+
+        return list.ToArray();
+    }
+
+    static void LoadLobbyAsGlobalSceneMovingPlayers()
+    {
+        NetworkManager nm = InstanceFinder.NetworkManager;
+        if (nm == null || nm.SceneManager == null)
+        {
+            Debug.LogError("[Extract] No NetworkManager/SceneManager para cargar Lobby en red.");
+            return;
+        }
+
+        NetworkObject[] players = CollectSpawnedPlayerNetworkObjects();
+        SceneLoadData sld = new SceneLoadData(LobbySceneName)
+        {
+            ReplaceScenes = ReplaceOption.All,
+            MovedNetworkObjects = players,
+            PreferredActiveScene = new PreferredScene(new SceneLookupData(LobbySceneName))
+        };
+
+        Debug.Log($"[Extract] LoadGlobalScenes Lobby (players moved={players.Length}).");
+        nm.SceneManager.LoadGlobalScenes(sld);
+    }
+
+    static bool IsLobbySceneLoaded()
+    {
+        Scene lobby = UnityEngine.SceneManagement.SceneManager.GetSceneByName(LobbySceneName);
+        return lobby.IsValid() && lobby.isLoaded;
+    }
+
     sealed class ExtractToLobbyRunner : MonoBehaviour
     {
         public void Begin() => StartCoroutine(Run());
 
         IEnumerator Run()
         {
-            LobbyPlayerTransfer.PrepareBeforeLeaveGameplay();
             RoundObjectiveState.Clear();
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
 
-            // Listen-server: no cortar la red en el mismo frame que el ObserversRpc;
-            // si no, el client puede no recibirlo y quedarse bloqueado en Gameplay.
+            bool online = IsOnlineNetworkSession()
+                          && GameSessionConfig.Mode != GamePlayMode.LocalSplitScreen;
+
+            if (!online)
+            {
+                // Local / offline: DDOL players + Unity LoadScene (sin red).
+                LobbyPlayerTransfer.PrepareBeforeLeaveGameplay();
+                yield return null;
+                StopAndDestroyNetworkManager();
+                yield return null;
+                UnityEngine.SceneManagement.SceneManager.LoadScene(LobbySceneName);
+                extractInProgress = false;
+                Destroy(gameObject);
+                yield break;
+            }
+
+            // Online: mantener FishNet. Solo el server carga Lobby global;
+            // clientes reciben la escena por SceneManager.
             NetworkManager networkManager = InstanceFinder.NetworkManager;
-            bool isListenServer = networkManager != null && networkManager.IsServerStarted;
-            if (isListenServer)
+            bool isServer = networkManager != null && networkManager.IsServerStarted;
+
+            if (isServer)
             {
                 for (int i = 0; i < HostExtractFlushFrames; i++)
                     yield return null;
 
                 yield return new WaitForSecondsRealtime(HostExtractNetworkFlushSeconds);
+                LoadLobbyAsGlobalSceneMovingPlayers();
             }
-            else
+
+            float timeout = 15f;
+            float elapsed = 0f;
+            while (!IsLobbySceneLoaded() && elapsed < timeout)
             {
+                elapsed += Time.unscaledDeltaTime;
                 yield return null;
             }
 
-            StopAndDestroyNetworkManager();
-            yield return null;
+            if (!IsLobbySceneLoaded())
+                Debug.LogWarning("[Extract] Timeout esperando escena Lobby en red.");
 
-            SceneManager.LoadScene(LobbySceneName);
             extractInProgress = false;
             Destroy(gameObject);
         }

@@ -15,6 +15,25 @@ public static class PlayerInputUtility
         if (playerInput.TryGetComponent(out PrivateInputActionsMarker _))
             return;
 
+        ClonePrivateActionAsset(playerInput);
+    }
+
+    /// <summary>
+    /// Clones online → Lobby: el marker se copia en el Instantiate y hay que regenerar asset propio.
+    /// </summary>
+    public static void ForcePrivateActionAsset(PlayerInput playerInput)
+    {
+        if (playerInput == null)
+            return;
+
+        if (playerInput.TryGetComponent(out PrivateInputActionsMarker marker))
+            Object.DestroyImmediate(marker);
+
+        ClonePrivateActionAsset(playerInput);
+    }
+
+    static void ClonePrivateActionAsset(PlayerInput playerInput)
+    {
         InputActionAsset source = playerInput.actions != null
             ? playerInput.actions
             : InputSystem.actions;
@@ -28,7 +47,8 @@ public static class PlayerInputUtility
         InputActionAsset copy = Object.Instantiate(source);
         copy.name = source.name + "_P" + playerInput.playerIndex;
         playerInput.actions = copy;
-        playerInput.gameObject.AddComponent<PrivateInputActionsMarker>();
+        if (!playerInput.TryGetComponent(out PrivateInputActionsMarker _))
+            playerInput.gameObject.AddComponent<PrivateInputActionsMarker>();
     }
 
     public static bool IsDevicePairedToPlayer(PlayerInput playerInput, InputDevice device)

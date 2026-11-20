@@ -48,6 +48,15 @@ public class PlayerMovement : MonoBehaviour
         stance.Initialize(pivot);
     }
 
+    /// <summary>Tras cambiar el InputActionAsset del PlayerInput.</summary>
+    public void RebindActions()
+    {
+        if (playerInput == null)
+            playerInput = GetComponent<PlayerInput>();
+        UnbindJump();
+        BindActionsFromPlayerInput();
+    }
+
     void Awake()
     {
         controller = GetComponent<CharacterController>();
@@ -60,6 +69,21 @@ public class PlayerMovement : MonoBehaviour
 
     void OnEnable()
     {
+        BindActionsFromPlayerInput();
+    }
+
+    void OnDisable()
+    {
+        UnbindJump();
+    }
+
+    void BindActionsFromPlayerInput()
+    {
+        if (playerInput == null)
+            playerInput = GetComponent<PlayerInput>();
+        if (playerInput == null || playerInput.actions == null)
+            return;
+
         var actions = playerInput.actions;
         moveAction = actions["Move"];
         lookAction = actions["Look"];
@@ -67,10 +91,11 @@ public class PlayerMovement : MonoBehaviour
         sprintAction = actions["Sprint"];
         crouchAction = actions["Crouch"];
         crouchToggleAction = actions.FindAction("CrouchToggle", false);
-        jumpAction.performed += OnJump;
+        if (jumpAction != null)
+            jumpAction.performed += OnJump;
     }
 
-    void OnDisable()
+    void UnbindJump()
     {
         if (jumpAction != null)
             jumpAction.performed -= OnJump;

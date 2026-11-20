@@ -19,6 +19,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         lobbyMode = enabledLobby;
     }
 
+    /// <summary>Lobby: reaplica lock de cursor (el Update no corre en lobbyMode).</summary>
+    public void RefreshCursorForLobby() => RefreshCursor();
+
     public void BeginSession()
     {
         if (started)

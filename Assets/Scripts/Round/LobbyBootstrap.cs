@@ -1,14 +1,16 @@
+using System.Collections.Generic;
+using FishNet;
+using FishNet.Managing;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.InputSystem;
 
 /// <summary>
-/// Arranque fiable del Lobby: UI de resultado + colocación de jugadores preservados.
+/// Arranque del Lobby: local (players DDOL) u online (NetworkPlayers en la misma sesión).
+/// Salir al menú: pausa → Leave (MatchSessionExit).
 /// </summary>
 public class LobbyBootstrap : MonoBehaviour
 {
-    const string MainMenuSceneName = "MainMenu";
     const string LobbySceneName = "Lobby";
 
     Text messageText;
@@ -40,20 +42,89 @@ public class LobbyBootstrap : MonoBehaviour
 
     void ActivateLobby()
     {
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-
         DisableSceneOnlyCameras();
         Vector3 center = FindLobbyPlaneCenter();
-        LobbyPlayerTransfer.PlacePreservedPlayersInLobby(center);
+
+        if (IsOnlineNetworkSession())
+        {
+            PlaceOnlinePlayersInLobby(center);
+            LockCursorForLocalOwners();
+        }
+        else
+        {
+            LobbyPlayerTransfer.PlacePreservedPlayersInLobby(center);
+            LobbyPlayerTransfer.EnableLobbyGameplayControls();
+        }
+
         EnsureResultUi();
     }
 
-    void Update()
+    static bool IsOnlineNetworkSession()
     {
-        Keyboard kb = Keyboard.current;
-        if (kb != null && (kb.enterKey.wasPressedThisFrame || kb.escapeKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
-            GoMainMenu();
+        NetworkManager nm = InstanceFinder.NetworkManager;
+        if (nm == null)
+            return false;
+        return nm.IsServerStarted || nm.IsClientStarted;
+    }
+
+    /// <summary>
+    /// Cada owner teleporta su NetworkPlayer (NT client-auth). Índices estables por ClientId.
+    /// </summary>
+    static void PlaceOnlinePlayersInLobby(Vector3 planeCenter)
+    {
+        NetworkPlayerController[] found =
+            Object.FindObjectsByType<NetworkPlayerController>(FindObjectsSortMode.None);
+
+        var owned = new List<NetworkPlayerController>(found.Length);
+        for (int i = 0; i < found.Length; i++)
+        {
+            if (found[i] != null)
+                owned.Add(found[i]);
+        }
+
+        owned.Sort((a, b) =>
+        {
+            int idA = a.Owner.ClientId >= 0 ? a.Owner.ClientId : a.ObjectId;
+            int idB = b.Owner.ClientId >= 0 ? b.Owner.ClientId : b.ObjectId;
+            return idA.CompareTo(idB);
+        });
+
+        for (int i = 0; i < owned.Count; i++)
+        {
+            NetworkPlayerController player = owned[i];
+            if (player == null || !player.IsOwner)
+                continue;
+
+            Vector3 pos = planeCenter + new Vector3((i - (owned.Count - 1) * 0.5f) * 2.2f, 1f, 0f);
+            TeleportCharacter(player.gameObject, pos, Quaternion.Euler(0f, 180f, 0f));
+
+            if (player.PlayerCamera != null)
+            {
+                player.PlayerCamera.enabled = true;
+                player.PlayerCamera.rect = new Rect(0f, 0f, 1f, 1f);
+                if (player.PlayerCamera.TryGetComponent(out AudioListener listener))
+                    listener.enabled = true;
+            }
+        }
+    }
+
+    static void TeleportCharacter(GameObject go, Vector3 position, Quaternion rotation)
+    {
+        if (go.TryGetComponent(out CharacterController cc))
+        {
+            cc.enabled = false;
+            go.transform.SetPositionAndRotation(position, rotation);
+            cc.enabled = true;
+            return;
+        }
+
+        go.transform.SetPositionAndRotation(position, rotation);
+    }
+
+    static void LockCursorForLocalOwners()
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     static Vector3 FindLobbyPlaneCenter()
@@ -84,10 +155,11 @@ public class LobbyBootstrap : MonoBehaviour
             Camera cam = cams[i];
             if (cam == null)
                 continue;
-            // No tocar cámaras de jugadores preservados.
             if (cam.GetComponentInParent<PlayerSessionIdentity>() != null)
                 continue;
             if (cam.GetComponentInParent<PlayerHealth>() != null)
+                continue;
+            if (cam.GetComponentInParent<NetworkPlayerController>() != null)
                 continue;
 
             cam.enabled = false;
@@ -119,6 +191,7 @@ public class LobbyBootstrap : MonoBehaviour
         panelRt.offsetMin = Vector2.zero;
         panelRt.offsetMax = Vector2.zero;
         panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.75f);
+        panel.GetComponent<Image>().raycastTarget = false;
 
         var textGo = new GameObject("ResultText", typeof(Text));
         textGo.transform.SetParent(panel.transform, false);
@@ -136,27 +209,19 @@ public class LobbyBootstrap : MonoBehaviour
         messageText.alignment = TextAnchor.MiddleCenter;
         messageText.horizontalOverflow = HorizontalWrapMode.Wrap;
         messageText.verticalOverflow = VerticalWrapMode.Overflow;
+        messageText.raycastTarget = false;
 
         if (RoundResultStore.HasResult)
         {
-            messageText.text = RoundResultStore.Message + "\n(Enter / Espacio / Esc → Menú)";
+            messageText.text = RoundResultStore.Message;
             messageText.color = RoundResultStore.IsVictory
                 ? new Color(0.45f, 0.95f, 0.55f)
                 : new Color(0.95f, 0.75f, 0.35f);
         }
         else
         {
-            messageText.text = "Lobby\n(Enter / Espacio / Esc → Menú)";
+            messageText.text = "Lobby";
             messageText.color = Color.white;
         }
-    }
-
-    void GoMainMenu()
-    {
-        LobbyPlayerTransfer.DestroyPreservedPlayers();
-        RoundResultStore.Clear();
-        RoundObjectiveState.Clear();
-        GameSessionConfig.Clear();
-        SceneManager.LoadScene(MainMenuSceneName);
     }
 }

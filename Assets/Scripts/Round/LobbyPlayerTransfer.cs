@@ -130,35 +130,21 @@ public static class LobbyPlayerTransfer
         clone.name = source.name + "_Lobby";
         StripNetworkComponents(clone);
 
-        if (keepControl
-            && source.TryGetComponent(out PlayerInput sourceInput)
-            && clone.TryGetComponent(out PlayerInput cloneInput))
+        InputDevice[] devices = null;
+        if (keepControl && source.TryGetComponent(out PlayerInput sourceInput))
         {
-            try
-            {
-                if (sourceInput.devices.Count > 0)
-                {
-                    var devices = new InputDevice[sourceInput.devices.Count];
-                    for (int d = 0; d < sourceInput.devices.Count; d++)
-                        devices[d] = sourceInput.devices[d];
-                    cloneInput.SwitchCurrentControlScheme(sourceInput.currentControlScheme, devices);
-                }
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[LobbyTransfer] No se pudo reasignar input: {e.Message}");
-            }
-
             scheme = sourceInput.currentControlScheme ?? scheme;
-            cloneInput.enabled = true;
-        }
-        else if (clone.TryGetComponent(out PlayerInput remoteInput))
-        {
-            remoteInput.enabled = false;
+            if (sourceInput.devices.Count > 0)
+            {
+                devices = new InputDevice[sourceInput.devices.Count];
+                for (int d = 0; d < sourceInput.devices.Count; d++)
+                    devices[d] = sourceInput.devices[d];
+            }
         }
 
         EnsureIdentity(clone, playerIndex, colorIndex, viewport, scheme);
-        RebindLocalComponents(clone, keepControl);
+        // Online clone: Force asset + re-pair devices DESPUÉS (cambiar actions pierde el pairing).
+        RebindLocalComponents(clone, keepControl, forceNewActionAsset: keepControl, scheme, devices);
         return clone;
     }
 
@@ -168,7 +154,7 @@ public static class LobbyPlayerTransfer
     public static void PrepareOfflineClone(GameObject go, bool keepControl = true)
     {
         StripNetworkComponents(go);
-        RebindLocalComponents(go, keepControl);
+        RebindLocalComponents(go, keepControl, forceNewActionAsset: keepControl);
     }
 
     public static void StripNetworkComponents(GameObject go)
@@ -197,7 +183,12 @@ public static class LobbyPlayerTransfer
         }
     }
 
-    static void RebindLocalComponents(GameObject go, bool keepControl = true)
+    static void RebindLocalComponents(
+        GameObject go,
+        bool keepControl = true,
+        bool forceNewActionAsset = false,
+        string controlScheme = null,
+        InputDevice[] devices = null)
     {
         // NetworkPlayer.prefab no trae pausa/foto/vida: los añadía NetworkPlayerController.Awake.
         // Tras strip FishNet ese Awake no corre → hay que crearlos aquí.
@@ -218,24 +209,14 @@ public static class LobbyPlayerTransfer
         if (go.TryGetComponent(out PlayerInput input))
         {
             if (keepControl)
-                PlayerInputUtility.EnsurePrivateActionAsset(input);
-            input.enabled = keepControl;
+                ConfigureLobbyPlayerInput(input, forceNewActionAsset, controlScheme, devices);
+            else
+                input.enabled = false;
         }
 
         if (keepControl)
         {
-            if (!go.TryGetComponent(out PlayerMovement movement))
-            {
-                if (go.TryGetComponent(out CharacterController _) && pivot != null && cam != null)
-                {
-                    movement = go.AddComponent<PlayerMovement>();
-                    movement.Initialize(pivot, cam);
-                }
-            }
-            else if (pivot != null && cam != null)
-            {
-                movement.Initialize(pivot, cam);
-            }
+            EnsureLobbyPlayerMovement(go, pivot, cam);
 
             if (!go.TryGetComponent(out PlayerGrab grab))
                 grab = go.AddComponent<PlayerGrab>();
@@ -263,14 +244,188 @@ public static class LobbyPlayerTransfer
         else
         {
             // Avatar remoto: sin control, cámara off (el local ya tiene la suya).
-            if (go.TryGetComponent(out PlayerMovement _))
-            { /* leave component; Update will no-op sin input bound if disabled PI */ }
+            if (go.TryGetComponent(out PlayerMovement movement))
+                movement.enabled = false;
             if (cam != null)
                 cam.enabled = false;
         }
 
         if (go.TryGetComponent(out CharacterController cc))
             cc.enabled = true;
+    }
+
+    static void ConfigureLobbyPlayerInput(
+        PlayerInput input,
+        bool forceNewActionAsset,
+        string controlScheme,
+        InputDevice[] devices)
+    {
+        if (input == null)
+            return;
+
+        // Snapshot devices antes del swap (Force invalida el pairing).
+        if (devices == null && input.devices.Count > 0)
+        {
+            devices = new InputDevice[input.devices.Count];
+            for (int d = 0; d < input.devices.Count; d++)
+                devices[d] = input.devices[d];
+        }
+
+        if (string.IsNullOrEmpty(controlScheme))
+            controlScheme = input.currentControlScheme;
+
+        input.enabled = false;
+
+        if (forceNewActionAsset)
+            PlayerInputUtility.ForcePrivateActionAsset(input);
+        else
+            PlayerInputUtility.EnsurePrivateActionAsset(input);
+
+        input.defaultActionMap = "Player";
+        input.enabled = true;
+
+        TryApplyControlScheme(input, controlScheme, devices);
+
+        try
+        {
+            input.SwitchCurrentActionMap("Player");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[LobbyTransfer] SwitchCurrentActionMap Player: {e.Message}");
+        }
+    }
+
+    static void TryApplyControlScheme(PlayerInput input, string controlScheme, InputDevice[] devices)
+    {
+        if (input == null)
+            return;
+
+        try
+        {
+            if (devices != null && devices.Length > 0)
+            {
+                string scheme = string.IsNullOrEmpty(controlScheme) ? "Keyboard&Mouse" : controlScheme;
+                input.SwitchCurrentControlScheme(scheme, devices);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(controlScheme) || controlScheme == "Keyboard&Mouse")
+            {
+                if (Keyboard.current != null && Mouse.current != null)
+                {
+                    input.SwitchCurrentControlScheme("Keyboard&Mouse", Keyboard.current, Mouse.current);
+                    return;
+                }
+            }
+
+            if (controlScheme == "Gamepad" && Gamepad.current != null)
+            {
+                input.SwitchCurrentControlScheme("Gamepad", Gamepad.current);
+                return;
+            }
+
+            if (Gamepad.current != null)
+                input.SwitchCurrentControlScheme("Gamepad", Gamepad.current);
+            else if (Keyboard.current != null && Mouse.current != null)
+                input.SwitchCurrentControlScheme("Keyboard&Mouse", Keyboard.current, Mouse.current);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[LobbyTransfer] ControlScheme: {e.Message}");
+        }
+    }
+
+    static void EnsureLobbyPlayerMovement(GameObject go, Transform pivot, Camera cam)
+    {
+        if (pivot == null || cam == null || !go.TryGetComponent(out CharacterController _))
+            return;
+
+        if (!go.TryGetComponent(out PlayerMovement movement))
+            movement = go.AddComponent<PlayerMovement>();
+
+        movement.Initialize(pivot, cam);
+        if (movement.enabled)
+            movement.RebindActions();
+        else
+            movement.enabled = true; // OnEnable → BindActionsFromPlayerInput
+    }
+
+    /// <summary>
+    /// Tras colocar en Lobby: mapa Player + cursor FPS.
+    /// Local: no regenera InputActionAsset (rompe devices).
+    /// Online: Force asset + re-pair devices.
+    /// </summary>
+    public static void EnableLobbyGameplayControls()
+    {
+        bool localSession = GameSessionConfig.Mode == GamePlayMode.LocalSplitScreen
+                            || Object.FindAnyObjectByType<LocalSplitScreenSession>() != null;
+        bool lockMouse = false;
+
+        for (int i = 0; i < PreservedPlayers.Count; i++)
+        {
+            GameObject player = PreservedPlayers[i];
+            if (player == null)
+                continue;
+            if (!player.TryGetComponent(out PlayerInput input))
+                continue;
+
+            // Avatares remotos online: input desactivado.
+            if (!input.enabled && !localSession)
+                continue;
+
+            string scheme = input.currentControlScheme;
+            if (string.IsNullOrEmpty(scheme) && player.TryGetComponent(out PlayerSessionIdentity id))
+                scheme = id.ControlScheme;
+
+            InputDevice[] devices = null;
+            if (input.devices.Count > 0)
+            {
+                devices = new InputDevice[input.devices.Count];
+                for (int d = 0; d < input.devices.Count; d++)
+                    devices[d] = input.devices[d];
+            }
+
+            // Local DDOL: solo mapa Player. Online clone: Force + devices otra vez.
+            ConfigureLobbyPlayerInput(input, forceNewActionAsset: !localSession, scheme, devices);
+
+            Transform pivot = player.transform.Find("CameraPivot");
+            Camera cam = null;
+            if (player.TryGetComponent(out PlayerMovement existingMove))
+                cam = existingMove.PlayerCamera;
+            if (cam == null)
+                cam = player.GetComponentInChildren<Camera>(true);
+
+            EnsureLobbyPlayerMovement(player, pivot, cam);
+
+            if (player.TryGetComponent(out PlayerPauseMenu pause) && cam != null)
+            {
+                pause.Initialize(cam);
+                pause.RebindActionsForPrivateAsset();
+            }
+
+            scheme = input.currentControlScheme;
+            if (string.IsNullOrEmpty(scheme) && player.TryGetComponent(out PlayerSessionIdentity id2))
+                scheme = id2.ControlScheme;
+
+            if (scheme == "Keyboard&Mouse" || string.IsNullOrEmpty(scheme))
+                lockMouse = true;
+        }
+
+        LocalSplitScreenSession session = Object.FindAnyObjectByType<LocalSplitScreenSession>();
+        if (session != null)
+            session.RefreshCursorForLobby();
+
+        if (lockMouse || (session != null && Keyboard.current != null))
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        else
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     static void EnsureOfflineGameplayComponents(GameObject go)
