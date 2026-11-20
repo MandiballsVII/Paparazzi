@@ -24,7 +24,7 @@ public class VisionSensor : MonoBehaviour
     float scanInterval = 0.15f;
 
     [SerializeField]
-    LayerMask occlusionMask = ~0;
+    LayerMask occlusionMask; // vacío → Walls (line of sight)
 
     PerceptionAgent agent;
     Coroutine scanRoutine;
@@ -99,12 +99,15 @@ public class VisionSensor : MonoBehaviour
             if (Vector3.Angle(forward, direction) > halfFov)
                 continue;
 
+            LayerMask mask = (occlusionMask.value == 0 || occlusionMask.value == ~0)
+                ? EnvironmentLayers.WallsMask
+                : occlusionMask;
             if (Physics.Raycast(
                     eye,
                     direction,
                     out RaycastHit hit,
                     distance,
-                    occlusionMask,
+                    mask,
                     QueryTriggerInteraction.Ignore))
             {
                 Transform hitT = hit.transform;

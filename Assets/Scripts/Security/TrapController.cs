@@ -9,8 +9,6 @@ using UnityEngine;
 /// </summary>
 public class TrapController : NetworkBehaviour
 {
-    const string FloorNameToken = "Floor";
-
     [SerializeField]
     Transform pivotLeft;
 
@@ -54,10 +52,13 @@ public class TrapController : NetworkBehaviour
     float floorSampleDownBias = 0.08f;
 
     [SerializeField]
+    float floorSampleOriginInset = 0.1f;
+
+    [SerializeField]
     float exitOutwardNudge = 0.35f;
 
     [SerializeField]
-    LayerMask floorSampleMask = ~0;
+    LayerMask floorSampleMask = 0; // 0 → Floor+Walls en runtime
 
     [SerializeField]
     LayerMask exitClearanceMask = ~0;
@@ -192,9 +193,9 @@ public class TrapController : NetworkBehaviour
     }
 
     /// <summary>
-    /// Copia el material de un suelo adyacente (nombre contiene "Floor").
-    /// Origen en el borde del footprint (evita colarse por el agujero del plano) + ligera caída.
-    /// Prueba 4 lados. RaycastAll ignora colliders propios.
+    /// Copia el material de un suelo adyacente (layer Floor).
+    /// Walls bloquean el rayo (no coger Floor al otro lado de la pared).
+    /// Origen en el borde del footprint + ligera caída. Prueba 4 lados.
     /// </summary>
     public void TrySampleAdjacentFloorMaterial()
     {
@@ -224,7 +225,7 @@ public class TrapController : NetworkBehaviour
 
             ApplyFloorMaterial(surfaceRenderer.sharedMaterial);
             Debug.Log(
-                $"[Trap:{gameObject.name}] material Floor desde '{hit.collider.name}' " +
+                $"[Trap:{gameObject.name}] material Floor (layer) desde '{hit.collider.name}' " +
                 $"(lado {sideNames[i]}, origin={origins[i]}, dist {hit.distance:0.###}, reach {reach:0.###}).");
             return;
         }
@@ -232,8 +233,7 @@ public class TrapController : NetworkBehaviour
         Debug.LogWarning(
             $"[Trap:{gameObject.name}] sample Floor falló: ningún hit válido en 4 lados " +
             $"(reach={reach:0.###}, heightOff={floorSampleHeightOffset}, downBias={floorSampleDownBias}). " +
-            "Activa debugFloorSampleRays y Gizmos en Game para ver los rayos. " +
-            "¿El suelo tiene 'Floor' en el nombre y collider no-trigger?");
+            "Activa debugFloorSampleRays y Gizmos. ¿Suelo en layer Floor y paredes en Walls?");
     }
 
     /// <summary>
@@ -276,6 +276,14 @@ public class TrapController : NetworkBehaviour
         return false;
     }
 
+    LayerMask GetFloorSampleQueryMask()
+    {
+        // Por defecto / Everything → solo Floor + Walls (paredes ocluyen).
+        if (floorSampleMask.value == 0 || floorSampleMask.value == ~0)
+            return EnvironmentLayers.FloorAndWallsMask;
+        return floorSampleMask;
+    }
+
     bool TryGetFloorHit(
         Vector3 origin,
         Vector3 direction,
@@ -290,7 +298,7 @@ public class TrapController : NetworkBehaviour
             origin,
             direction,
             reach,
-            floorSampleMask,
+            GetFloorSampleQueryMask(),
             QueryTriggerInteraction.Ignore);
 
         if (hits == null || hits.Length == 0)
@@ -305,7 +313,12 @@ public class TrapController : NetworkBehaviour
                 continue;
             if (hit.collider.transform == transform || hit.collider.transform.IsChildOf(transform))
                 continue;
-            if (!NameContainsFloor(hit.collider.transform))
+
+            // Pared antes que suelo → este lado no vale (no atravesar Walls).
+            if (EnvironmentLayers.IsWall(hit.collider))
+                return false;
+
+            if (!EnvironmentLayers.IsFloor(hit.collider))
                 continue;
 
             Renderer renderer = hit.collider.GetComponent<Renderer>();
@@ -343,7 +356,8 @@ public class TrapController : NetworkBehaviour
                 continue;
             if (col.transform == transform || col.transform.IsChildOf(transform))
                 continue;
-            if (NameContainsFloor(col.transform))
+            // El suelo bajo los pies no bloquea el spawn.
+            if (EnvironmentLayers.IsFloor(col))
                 continue;
             return false;
         }
@@ -371,7 +385,9 @@ public class TrapController : NetworkBehaviour
         Vector3 center = combined.center;
         float height = Mathf.Max(0.01f, floorSampleHeightOffset);
         float downBias = Mathf.Max(0.01f, floorSampleDownBias);
-        reach = Mathf.Max(0.1f, floorSampleMargin)
+        float inset = Mathf.Max(0f, floorSampleOriginInset);
+        // Origen más adentro → hay que alargar el reach para seguir alcanzando el Floor exterior.
+        reach = (Mathf.Max(0.1f, floorSampleMargin) + inset)
                 * Mathf.Sqrt(1f + downBias * downBias);
 
         Vector3[] axes =
@@ -391,8 +407,9 @@ public class TrapController : NetworkBehaviour
         {
             Vector3 axis = axes[i].normalized;
             float halfAlong = GetBoundsHalfExtentAlong(combined, axis);
-            // Borde del footprint: no atraviesa el agujero del plano Floor.
-            origins[i] = center + axis * halfAlong + transform.up * height;
+            // Un poco hacia el centro: si la trampa está pegada a Walls, el origen no nace dentro de la pared.
+            float along = Mathf.Max(0f, halfAlong - inset);
+            origins[i] = center + axis * along + transform.up * height;
             directions[i] = (axis - transform.up * downBias).normalized;
             horizontals[i] = axis;
         }
@@ -450,18 +467,6 @@ public class TrapController : NetworkBehaviour
             if (plates[i] != null)
                 plates[i].ApplySharedMaterial(material);
         }
-    }
-
-    static bool NameContainsFloor(Transform t)
-    {
-        while (t != null)
-        {
-            if (t.name.IndexOf(FloorNameToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-            t = t.parent;
-        }
-
-        return false;
     }
 
     /// <summary>

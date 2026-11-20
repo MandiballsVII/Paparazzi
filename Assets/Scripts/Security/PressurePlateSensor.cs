@@ -11,6 +11,8 @@ using UnityEngine.Events;
 [RequireComponent(typeof(Collider))]
 public class PressurePlateSensor : NetworkBehaviour
 {
+    static readonly Collider[] PropOverlapBuffer = new Collider[24];
+
     [SerializeField]
     float cooldownSeconds = 5f;
 
@@ -24,7 +26,13 @@ public class PressurePlateSensor : NetworkBehaviour
     float playerSamplePadding = 0.12f;
 
     [SerializeField]
+    float propSamplePadding = 0.2f;
+
+    [SerializeField]
     LayerMask surfaceSampleMask = ~0;
+
+    [SerializeField]
+    LayerMask propOverlapMask = ~0;
 
     [SerializeField]
     UnityEvent onTrapActivated;
@@ -127,6 +135,7 @@ public class PressurePlateSensor : NetworkBehaviour
 
         nextPlayerPollUnscaledTime = Time.unscaledTime + Mathf.Max(0.02f, playerPollInterval);
         PollLocalPlayers();
+        PollDynamicProps();
     }
 
     /// <summary>
@@ -225,6 +234,44 @@ public class PressurePlateSensor : NetworkBehaviour
                 continue;
 
             ReportPlayerActivation(activatorName);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Props rodando/lanzados: OnTriggerEnter puede fallar (tunneling en trigger fino).
+    /// Overlap periódico en server/offline. Jugadores se ignoran aquí.
+    /// </summary>
+    void PollDynamicProps()
+    {
+        if (IsNetworkSessionActive() && !IsServerInitialized)
+            return;
+
+        if (triggerCollider == null && !TryGetComponent(out triggerCollider))
+            return;
+
+        Vector3 worldCenter = triggerCollider.transform.TransformPoint(triggerCollider.center);
+        Vector3 halfExtents = Vector3.Scale(triggerCollider.size * 0.5f, triggerCollider.transform.lossyScale);
+        halfExtents += Vector3.one * Mathf.Max(0f, propSamplePadding);
+
+        int count = Physics.OverlapBoxNonAlloc(
+            worldCenter,
+            halfExtents,
+            PropOverlapBuffer,
+            triggerCollider.transform.rotation,
+            propOverlapMask,
+            QueryTriggerInteraction.Ignore);
+
+        for (int i = 0; i < count; i++)
+        {
+            Collider col = PropOverlapBuffer[i];
+            if (col == null || col.transform.IsChildOf(transform) || col.transform == transform)
+                continue;
+
+            if (!TryResolveActivator(col, out string activatorName, out bool isPlayer) || isPlayer)
+                continue;
+
+            ProcessActivation(activatorName);
             return;
         }
     }

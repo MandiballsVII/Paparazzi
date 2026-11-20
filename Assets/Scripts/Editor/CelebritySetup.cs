@@ -100,13 +100,16 @@ public static class CelebritySetup
     public static void SetupFloorNavMesh(bool showDialog = true)
     {
         Scene gameplay = EnsureGameplayOpen();
-        GameObject floor = FindRootByName(gameplay, "Floor");
+        GameObject floor = FindFirstWithLayer(gameplay, EnvironmentLayers.Floor);
         if (floor == null)
         {
             if (showDialog)
-                EditorUtility.DisplayDialog("NavMesh", "No se encontró el GameObject 'Floor' en Gameplay.", "OK");
+                EditorUtility.DisplayDialog(
+                    "NavMesh",
+                    "No se encontró ningún objeto en layer Floor dentro de Gameplay.",
+                    "OK");
             else
-                Debug.LogError("[CelebritySetup] No se encontró Floor en Gameplay.");
+                Debug.LogError("[CelebritySetup] No se encontró objeto en layer Floor en Gameplay.");
             return;
         }
 
@@ -115,7 +118,7 @@ public static class CelebritySetup
         // Paredes / vehículo estáticos. No marcar rigidbodies dinámicos (cajas, esferas).
         foreach (GameObject root in gameplay.GetRootGameObjects())
         {
-            if (root.name == "Floor")
+            if (EnvironmentLayers.IsFloor(root))
                 continue;
             if (root.GetComponentInChildren<Rigidbody>() != null)
                 continue;
@@ -336,12 +339,19 @@ public static class CelebritySetup
         return EditorSceneManager.OpenScene(GameplayPath, OpenSceneMode.Single);
     }
 
-    static GameObject FindRootByName(Scene scene, string name)
+    static GameObject FindFirstWithLayer(Scene scene, int layer)
     {
         foreach (GameObject root in scene.GetRootGameObjects())
         {
-            if (root.name == name)
+            if (root.layer == layer)
                 return root;
+
+            Transform[] children = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < children.Length; i++)
+            {
+                if (children[i] != null && children[i].gameObject.layer == layer)
+                    return children[i].gameObject;
+            }
         }
 
         return null;

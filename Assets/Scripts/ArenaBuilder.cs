@@ -178,6 +178,11 @@ public static class ArenaBuilder
         box.transform.localRotation = Quaternion.identity;
         box.transform.localScale = scale;
         ApplyColor(box, color);
+
+        if (name.IndexOf("Wall", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            box.layer = EnvironmentLayers.Walls;
+        else if (name.IndexOf("Floor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            box.layer = EnvironmentLayers.Floor;
     }
 
     static void CreateLocalPhysicsBox(Transform parent, Vector3 position, Vector3 scale, float mass, Color color)

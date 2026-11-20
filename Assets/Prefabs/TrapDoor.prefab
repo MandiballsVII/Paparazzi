@@ -450,7 +450,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.55, y: 0.03, z: 0.55}
+  m_LocalScale: {x: 0.8, y: 0.03, z: 0.4}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4680691312900889407}
@@ -579,7 +579,11 @@ MonoBehaviour:
   surfaceSampleDistance: 0.35
   playerPollInterval: 0.05
   playerSamplePadding: 0.12
+  propSamplePadding: 0.2
   surfaceSampleMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  propOverlapMask:
     serializedVersion: 2
     m_Bits: 4294967295
   onTrapActivated:

@@ -27,7 +27,7 @@ public class HearingSensor : MonoBehaviour
     float wallAttenuation = 0.55f;
 
     [SerializeField]
-    LayerMask wallMask = ~0;
+    LayerMask wallMask; // vacío → EnvironmentLayers.WallsMask
 
     [SerializeField]
     float earHeight = 1.6f;
@@ -86,12 +86,13 @@ public class HearingSensor : MonoBehaviour
         }
 
         Vector3 direction = toNoise / distance;
+        LayerMask mask = UseDefaultWallMask(wallMask) ? EnvironmentLayers.WallsMask : wallMask;
         int hitCount = Physics.RaycastNonAlloc(
             ear,
             direction,
             OcclusionHits,
             distance,
-            wallMask,
+            mask,
             QueryTriggerInteraction.Ignore);
 
         wallsCrossed = CountBlockingWalls(hitCount, noise.Instigator);
@@ -122,12 +123,8 @@ public class HearingSensor : MonoBehaviour
             if (instigator != null && (hitTransform == instigator || hitTransform.IsChildOf(instigator)))
                 continue;
 
-            // No contar jugadores ni suelos (normal hacia arriba).
-            if (hitTransform.TryGetComponent(out PerceptionTarget _)
-                || hitTransform.GetComponentInParent<PerceptionTarget>() != null)
-                continue;
-
-            if (Vector3.Dot(OcclusionHits[i].normal, Vector3.up) > 0.65f)
+            // Solo layer Walls (el Raycast ya filtra si wallMask es WallsMask).
+            if (!EnvironmentLayers.IsWall(hitTransform))
                 continue;
 
             walls++;
@@ -135,6 +132,8 @@ public class HearingSensor : MonoBehaviour
 
         return walls;
     }
+
+    static bool UseDefaultWallMask(LayerMask mask) => mask.value == 0 || mask.value == ~0;
 
 #if UNITY_EDITOR
     void OnDrawGizmosSelected()

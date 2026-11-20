@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Rejilla bajo trampilla: Interact saca al jugador a un Floor adyacente seguro.
+/// Rejilla bajo trampilla: Interact saca al jugador a un suelo (layer Floor) adyacente seguro.
 /// Online: teleport en el owner (NetworkTransform sincroniza). Local: directo.
 /// </summary>
 public class AirVentExit : MonoBehaviour, IPlayerInteractable
