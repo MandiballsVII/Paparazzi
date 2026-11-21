@@ -22,6 +22,15 @@ public class PlayerPhotoCapture : MonoBehaviour
         playerCamera = camera;
     }
 
+    /// <summary>
+    /// Tras clonar el InputActionAsset hay que volver a enganchar Photo.
+    /// </summary>
+    public void RebindActionsForPrivateAsset()
+    {
+        UnbindInput();
+        BindInput();
+    }
+
     void Awake()
     {
         playerInput = GetComponent<PlayerInput>();
@@ -54,7 +63,10 @@ public class PlayerPhotoCapture : MonoBehaviour
 
         photoAction = playerInput.actions["Photo"];
         if (photoAction == null)
+        {
+            Debug.LogWarning($"[PhotoCapture] Acción 'Photo' no encontrada en {name}.");
             return;
+        }
 
         photoAction.performed += OnPhotoPerformed;
         inputBound = true;
@@ -63,9 +75,14 @@ public class PlayerPhotoCapture : MonoBehaviour
     public void UnbindInput()
     {
         if (!inputBound || photoAction == null)
+        {
+            inputBound = false;
+            photoAction = null;
             return;
+        }
 
         photoAction.performed -= OnPhotoPerformed;
+        photoAction = null;
         inputBound = false;
     }
 
@@ -87,9 +104,25 @@ public class PlayerPhotoCapture : MonoBehaviour
 
     public Texture2D CaptureAndStore()
     {
+        if (album == null)
+            TryGetComponent(out album);
+
         Texture2D photo = CaptureFrame();
         if (photo == null)
+        {
+            Debug.LogWarning(
+                $"[PhotoCapture] CaptureFrame falló en {name}: " +
+                $"cam={(playerCamera != null ? playerCamera.name : "null")} " +
+                $"enabled={(playerCamera != null && playerCamera.enabled)}");
             return null;
+        }
+
+        if (album == null)
+        {
+            Debug.LogWarning($"[PhotoCapture] Sin PlayerPhotoAlbum en {name}; foto descartada.");
+            Destroy(photo);
+            return null;
+        }
 
         CelebrityBrain celebrity = PhotoEvaluator.FindCelebrity();
         var context = new PhotoCaptureContext
@@ -102,7 +135,14 @@ public class PlayerPhotoCapture : MonoBehaviour
 
         PhotoEvaluation evaluation = PhotoEvaluator.Evaluate(context);
         var shot = new PhotoShot(photo, evaluation, transform);
+        int before = album.Count;
         album.AddShot(shot);
+
+        if (album.Count <= before)
+        {
+            Debug.LogWarning($"[PhotoCapture] AddShot no aumentó el álbum en {name} (count={album.Count}).");
+            return null;
+        }
 
         if (shot.IsControversialActionShot)
         {

@@ -1,20 +1,20 @@
+using System.Collections;
 using System.Collections.Generic;
 using FishNet;
 using FishNet.Managing;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 
 /// <summary>
-/// Arranque del Lobby: local (players DDOL) u online (NetworkPlayers en la misma sesión).
+/// Arranque del Lobby: coloca jugadores + liquida economía + News.
 /// Salir al menú: pausa → Leave (MatchSessionExit).
 /// </summary>
 public class LobbyBootstrap : MonoBehaviour
 {
     const string LobbySceneName = "Lobby";
+    const string NewsObjectName = "News";
 
-    Text messageText;
-    bool uiBuilt;
+    bool activated;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void RegisterSceneCallback()
@@ -42,21 +42,104 @@ public class LobbyBootstrap : MonoBehaviour
 
     void ActivateLobby()
     {
+        if (activated)
+            return;
+        activated = true;
+
         DisableSceneOnlyCameras();
+        EnsureNewsBoard();
         Vector3 center = FindLobbyPlaneCenter();
 
         if (IsOnlineNetworkSession())
         {
             PlaceOnlinePlayersInLobby(center);
             LockCursorForLocalOwners();
+            StartCoroutine(SettleEconomyOnlineNextFrame());
         }
         else
         {
             LobbyPlayerTransfer.PlacePreservedPlayersInLobby(center);
             LobbyPlayerTransfer.EnableLobbyGameplayControls();
+            SettleEconomyLocal();
+        }
+    }
+
+    static void EnsureNewsBoard()
+    {
+        GameObject news = GameObject.Find(NewsObjectName);
+        if (news == null)
+        {
+            Debug.LogWarning("[Lobby] No hay objeto 'News' en la escena.");
+            return;
         }
 
-        EnsureResultUi();
+        if (!news.TryGetComponent(out NewsBoardPresenter _))
+            news.AddComponent<NewsBoardPresenter>();
+    }
+
+    static void SettleEconomyLocal()
+    {
+        RunEconomy.ResetPendingSettlement();
+        RunEconomy.SettleFromAllLocalAlbums();
+        NewsBoardPresenter.RefreshAll();
+    }
+
+    IEnumerator SettleEconomyOnlineNextFrame()
+    {
+        RunEconomy.ResetPendingSettlement();
+
+        const int maxAttempts = 30;
+        bool submitted = false;
+
+        for (int attempt = 0; attempt < maxAttempts && !submitted; attempt++)
+        {
+            yield return null;
+
+            NetworkPlayerController[] players =
+                Object.FindObjectsByType<NetworkPlayerController>(FindObjectsSortMode.None);
+
+            bool anyOwner = false;
+            bool allReady = true;
+
+            for (int i = 0; i < players.Length; i++)
+            {
+                NetworkPlayerController player = players[i];
+                if (player == null)
+                    continue;
+
+                int shots = player.TryGetComponent(out PlayerPhotoAlbum album) && album != null
+                    ? album.Count
+                    : -1;
+
+                Debug.Log(
+                    $"[Lobby] Settle scan attempt={attempt} go={player.name} id={player.GetInstanceID()} " +
+                    $"scene={player.gameObject.scene.name} owner={player.IsOwner} shots={shots} " +
+                    $"albumId={(album != null ? album.GetInstanceID() : 0)}");
+
+                if (!player.IsOwner)
+                    continue;
+
+                anyOwner = true;
+                if (!player.TryGetComponent(out PhotoEconomyReporter reporter))
+                {
+                    Debug.LogWarning(
+                        "[Lobby] Falta PhotoEconomyReporter en NetworkPlayer (debe existir antes del spawn).");
+                    allReady = false;
+                    continue;
+                }
+
+                if (!reporter.SubmitAlbumForSettlement())
+                    allReady = false;
+            }
+
+            if (anyOwner && allReady)
+                submitted = true;
+        }
+
+        if (!submitted)
+            Debug.LogWarning("[Lobby] Timeout reportando álbum para economía online.");
+
+        NewsBoardPresenter.RefreshAll();
     }
 
     static bool IsOnlineNetworkSession()
@@ -67,9 +150,6 @@ public class LobbyBootstrap : MonoBehaviour
         return nm.IsServerStarted || nm.IsClientStarted;
     }
 
-    /// <summary>
-    /// Cada owner teleporta su NetworkPlayer (NT client-auth). Índices estables por ClientId.
-    /// </summary>
     static void PlaceOnlinePlayersInLobby(Vector3 planeCenter)
     {
         NetworkPlayerController[] found =
@@ -165,63 +245,6 @@ public class LobbyBootstrap : MonoBehaviour
             cam.enabled = false;
             if (cam.TryGetComponent(out AudioListener listener))
                 listener.enabled = false;
-        }
-    }
-
-    void EnsureResultUi()
-    {
-        if (uiBuilt)
-            return;
-        uiBuilt = true;
-
-        var canvasGo = new GameObject("LobbyResultCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        canvasGo.transform.SetParent(transform, false);
-        Canvas canvas = canvasGo.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
-        CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-
-        var panel = new GameObject("Banner", typeof(Image));
-        panel.transform.SetParent(canvasGo.transform, false);
-        RectTransform panelRt = panel.GetComponent<RectTransform>();
-        panelRt.anchorMin = new Vector2(0.15f, 0.72f);
-        panelRt.anchorMax = new Vector2(0.85f, 0.95f);
-        panelRt.offsetMin = Vector2.zero;
-        panelRt.offsetMax = Vector2.zero;
-        panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.75f);
-        panel.GetComponent<Image>().raycastTarget = false;
-
-        var textGo = new GameObject("ResultText", typeof(Text));
-        textGo.transform.SetParent(panel.transform, false);
-        RectTransform textRt = textGo.GetComponent<RectTransform>();
-        textRt.anchorMin = Vector2.zero;
-        textRt.anchorMax = Vector2.one;
-        textRt.offsetMin = new Vector2(16f, 8f);
-        textRt.offsetMax = new Vector2(-16f, -8f);
-
-        messageText = textGo.GetComponent<Text>();
-        messageText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        if (messageText.font == null)
-            messageText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        messageText.fontSize = 36;
-        messageText.alignment = TextAnchor.MiddleCenter;
-        messageText.horizontalOverflow = HorizontalWrapMode.Wrap;
-        messageText.verticalOverflow = VerticalWrapMode.Overflow;
-        messageText.raycastTarget = false;
-
-        if (RoundResultStore.HasResult)
-        {
-            messageText.text = RoundResultStore.Message;
-            messageText.color = RoundResultStore.IsVictory
-                ? new Color(0.45f, 0.95f, 0.55f)
-                : new Color(0.95f, 0.75f, 0.35f);
-        }
-        else
-        {
-            messageText.text = "Lobby";
-            messageText.color = Color.white;
         }
     }
 }

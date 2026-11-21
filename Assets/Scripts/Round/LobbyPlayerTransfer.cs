@@ -226,7 +226,7 @@ public static class LobbyPlayerTransfer
             if (go.TryGetComponent(out PlayerPhotoCapture capture) && cam != null)
             {
                 capture.Initialize(cam);
-                capture.BindInput();
+                capture.RebindActionsForPrivateAsset();
             }
 
             if (go.TryGetComponent(out PlayerPauseMenu pause) && cam != null)

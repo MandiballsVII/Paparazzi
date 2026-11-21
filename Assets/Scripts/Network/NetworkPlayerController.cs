@@ -285,7 +285,8 @@ public class NetworkPlayerController : NetworkBehaviour
         if (TryGetComponent(out PlayerPhotoCapture capture))
         {
             capture.Initialize(playerCamera);
-            capture.BindInput();
+            // Tras EnsurePrivateActionAsset hay que reenganchar Photo al asset clonado.
+            capture.RebindActionsForPrivateAsset();
         }
 
         if (pauseMenu != null)
@@ -324,6 +325,10 @@ public class NetworkPlayerController : NetworkBehaviour
 
         if (!TryGetComponent(out PlayerPauseMenu menu))
             menu = gameObject.AddComponent<PlayerPauseMenu>();
+
+        // PhotoEconomyReporter es NetworkBehaviour: debe ir en el prefab (no AddComponent en runtime).
+        if (!TryGetComponent(out PhotoEconomyReporter _))
+            Debug.LogError("[NetworkPlayer] Falta PhotoEconomyReporter en el prefab NetworkPlayer.");
 
         pauseMenu = menu;
     }

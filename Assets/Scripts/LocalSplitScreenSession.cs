@@ -103,7 +103,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         player.camera = playerCamera;
         player.GetComponent<PlayerMovement>().Initialize(pivot, playerCamera);
         player.GetComponent<PlayerGrab>().Initialize(playerCamera);
-        player.GetComponent<PlayerPhotoCapture>().Initialize(playerCamera);
+        PlayerPhotoCapture photoCapture = player.GetComponent<PlayerPhotoCapture>();
+        photoCapture.Initialize(playerCamera);
+        photoCapture.RebindActionsForPrivateAsset();
         PlayerPauseMenu pauseMenu = player.GetComponent<PlayerPauseMenu>();
         pauseMenu.Initialize(playerCamera);
         pauseMenu.RebindActionsForPrivateAsset();

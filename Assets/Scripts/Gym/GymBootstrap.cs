@@ -235,7 +235,10 @@ public class GymBootstrap : MonoBehaviour
             if (instance.TryGetComponent(out PlayerGrab grab))
                 grab.Initialize(cam);
             if (instance.TryGetComponent(out PlayerPhotoCapture capture))
+            {
                 capture.Initialize(cam);
+                capture.RebindActionsForPrivateAsset();
+            }
             if (instance.TryGetComponent(out PlayerPauseMenu pause))
             {
                 pause.Initialize(cam);

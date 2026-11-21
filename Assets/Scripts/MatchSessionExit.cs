@@ -41,6 +41,7 @@ public static class MatchSessionExit
         StopAndDestroyNetworkManager();
         RoundResultStore.Clear();
         RoundObjectiveState.Clear();
+        RunEconomy.Clear();
         GameSessionConfig.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
@@ -51,6 +52,7 @@ public static class MatchSessionExit
     {
         extractInProgress = false;
         LobbyPlayerTransfer.DestroyPreservedPlayers();
+        RunEconomy.Clear();
         GameSessionConfig.Clear();
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
@@ -101,6 +103,20 @@ public static class MatchSessionExit
                 continue;
             if (!player.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
                 continue;
+
+            int shots = 0;
+            int albumId = 0;
+            if (player.TryGetComponent(out PlayerPhotoAlbum album) && album != null)
+            {
+                shots = album.Count;
+                albumId = album.GetInstanceID();
+            }
+
+            Debug.Log(
+                $"[Extract] Move candidate go={player.name} id={player.GetInstanceID()} " +
+                $"nob={nob.ObjectId} scene={player.gameObject.scene.name} " +
+                $"albumId={albumId} shots={shots} owner={player.IsOwner}");
+
             list.Add(nob);
         }
 

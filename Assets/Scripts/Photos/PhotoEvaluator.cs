@@ -6,10 +6,6 @@ using UnityEngine;
 /// </summary>
 public static class PhotoEvaluator
 {
-    const float BaseScore = 10f;
-    const float CelebrityInFrameBonus = 40f;
-    const float ControversialActionBonus = 100f;
-
     static readonly List<IPhotoFactor> Factors = new()
     {
         new CelebrityInFramePhotoFactor(),
@@ -38,11 +34,22 @@ public static class PhotoEvaluator
         for (int i = 0; i < Factors.Count; i++)
             Factors[i].Evaluate(context, evaluation);
 
-        float value = BaseScore;
-        value += evaluation.GetFactorScore(PhotoFactorId.CelebrityInFrame) * CelebrityInFrameBonus;
-        value += evaluation.GetFactorScore(PhotoFactorId.CelebrityPerformingAction) * ControversialActionBonus;
-        evaluation.FinalizeValue(value);
+        evaluation.FinalizeValue(GetPayoutValue(evaluation));
         return evaluation;
+    }
+
+    /// <summary>
+    /// Polémica = 1000; famoso en frame (sin polémica) = 50; resto = 0.
+    /// </summary>
+    public static int GetPayoutValue(PhotoEvaluation evaluation)
+    {
+        if (evaluation == null)
+            return 0;
+        if (evaluation.IsControversialActionShot)
+            return RunEconomyConstants.ControversialPhotoValue;
+        if (evaluation.HasCelebrityInFrame)
+            return RunEconomyConstants.FamousPhotoValue;
+        return 0;
     }
 
     public static CelebrityBrain FindCelebrity()

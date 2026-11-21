@@ -186,6 +186,7 @@ GameObject:
   - component: {fileID: 7777404989258011188}
   - component: {fileID: 1528214745406039892}
   - component: {fileID: 5523623263787741957}
+  - component: {fileID: 5495079830647312689}
   m_Layer: 0
   m_Name: NetworkPlayer
   m_TagString: Untagged
@@ -481,3 +482,18 @@ MonoBehaviour:
   maxSoftPushSpeed: 3
   holdNetworkSyncInterval: 0.05
   playerCamera: {fileID: 4841945828787539668}
+--- !u!114 &5495079830647312689
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9006363252777286974}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 75aa72d4e69a2294caf3e1819be428fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PhotoEconomyReporter
+  _componentIndexCache: 255
+  _addedNetworkObject: {fileID: 5519255930859113086}
+  _networkObjectCache: {fileID: 0}
