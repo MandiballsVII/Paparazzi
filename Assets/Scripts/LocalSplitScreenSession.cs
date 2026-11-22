@@ -3,13 +3,20 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering.Universal;
 
+/// <summary>
+/// Split-screen local usando el mismo prefab NetworkPlayer que online
+/// (FishNet se elimina solo en la instancia).
+/// </summary>
 public class LocalSplitScreenSession : MonoBehaviour
 {
     const int MaxPlayers = 4;
+    const string NetworkPlayerPrefabPath = "Assets/Prefabs/NetworkPlayer.prefab";
+
+    [SerializeField]
+    GameObject networkPlayerPrefab;
 
     readonly List<PlayerInput> players = new List<PlayerInput>();
     readonly HashSet<InputDevice> claimedDevices = new HashSet<InputDevice>();
-    GameObject playerTemplate;
     bool keyboardJoined;
     bool started;
     bool lobbyMode;
@@ -31,10 +38,10 @@ public class LocalSplitScreenSession : MonoBehaviour
         lobbyMode = false;
         enabled = true;
 
-        // El escenario lo aporta la escena Gameplay; solo spawneamos props agarrables.
+        EnsureNetworkPlayerPrefab();
+
         var propsRoot = new GameObject("PhysicsProps");
         ArenaBuilder.BuildLocalPhysicsProps(propsRoot.transform);
-        playerTemplate = CreatePlayerTemplate();
 
         if (Keyboard.current != null && Mouse.current != null)
             TryJoinKeyboardMouse();
@@ -88,48 +95,156 @@ public class LocalSplitScreenSession : MonoBehaviour
 
     void Join(string controlScheme, params InputDevice[] devices)
     {
-        PlayerInput player = PlayerInput.Instantiate(
-            playerTemplate,
-            playerIndex: players.Count,
-            controlScheme: controlScheme,
-            pairWithDevices: devices);
+        int index = players.Count;
+        GameObject instance = InstantiateNetworkPlayerInactive();
+        if (instance == null)
+            return;
+
+        instance.name = $"NetworkPlayer (Local {index + 1})";
+
+        if (instance.TryGetComponent(out PlayerInput earlyInput))
+            PlayerInputUtility.EnsurePrivateActionAsset(earlyInput);
+
+        // Quitar FishNet antes de activar (evita error de NetworkObject.Awake).
+        LobbyPlayerTransfer.PrepareOfflineClone(instance, keepControl: true);
+
+        if (instance.TryGetComponent(out CharacterController controller))
+        {
+            PlayerBodyMetrics.ApplyToCharacterController(controller);
+            controller.enabled = false;
+        }
+
+        instance.transform.position = ArenaBuilder.SpawnPosition(index);
+        instance.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+
+        if (controller != null)
+            controller.enabled = true;
+
+        instance.SetActive(true);
+
+        if (!instance.TryGetComponent(out PlayerInput player))
+        {
+            Debug.LogError("[Local] El NetworkPlayer clone no tiene PlayerInput.");
+            Object.Destroy(instance);
+            return;
+        }
 
         player.neverAutoSwitchControlSchemes = true;
-        player.gameObject.name = $"Player {players.Count + 1}";
         PlayerInputUtility.EnsurePrivateActionAsset(player);
+        try
+        {
+            player.SwitchCurrentControlScheme(controlScheme, devices);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[Local] No se pudo emparejar input: {e.Message}");
+        }
 
-        Transform pivot = player.transform.Find("CameraPivot");
-        Camera playerCamera = pivot.GetComponentInChildren<Camera>();
-        player.camera = playerCamera;
-        player.GetComponent<PlayerMovement>().Initialize(pivot, playerCamera);
-        player.GetComponent<PlayerGrab>().Initialize(playerCamera);
-        PlayerPhotoCapture photoCapture = player.GetComponent<PlayerPhotoCapture>();
-        photoCapture.Initialize(playerCamera);
-        photoCapture.RebindActionsForPrivateAsset();
-        PlayerPauseMenu pauseMenu = player.GetComponent<PlayerPauseMenu>();
-        pauseMenu.Initialize(playerCamera);
-        pauseMenu.RebindActionsForPrivateAsset();
-        player.GetComponent<PlayerHealthHud>().Initialize(playerCamera);
+        player.enabled = true;
 
-        player.gameObject.SetActive(true);
+        Rect viewport = LobbyPlayerTransfer.ViewportFor(index, index + 1);
+        int color = index % ArenaBuilder.PlayerColors.Length;
+        LobbyPlayerTransfer.EnsureIdentity(instance, index, color, viewport, controlScheme);
+        ArenaBuilder.ApplyColor(instance, ArenaBuilder.PlayerColors[color]);
 
-        CharacterController controller = player.GetComponent<CharacterController>();
-        controller.enabled = false;
-        player.transform.position = ArenaBuilder.SpawnPosition(players.Count);
-        player.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-        controller.enabled = true;
+        if (TryGetPlayerCamera(instance.transform, out Camera cam))
+        {
+            player.camera = cam;
+            cam.rect = viewport;
+            cam.enabled = true;
+            if (cam.TryGetComponent(out UniversalAdditionalCameraData cameraData))
+            {
+                cameraData.renderType = CameraRenderType.Base;
+                cameraData.renderPostProcessing = false;
+            }
 
-        int index = players.Count;
-        Rect view = LobbyPlayerTransfer.ViewportFor(index, index + 1);
-        LobbyPlayerTransfer.EnsureIdentity(
-            player.gameObject,
-            index,
-            index % ArenaBuilder.PlayerColors.Length,
-            view,
-            controlScheme);
+            // PrepareOfflineClone ya inicializa movement/grab/pause/health;
+            // reaplicar cámara/viewport y alarm HUD del prefab.
+            if (instance.TryGetComponent(out PlayerPhotoCapture capture))
+            {
+                capture.Initialize(cam);
+                capture.RebindActionsForPrivateAsset();
+            }
+
+            if (instance.TryGetComponent(out PlayerPauseMenu pause))
+            {
+                pause.Initialize(cam);
+                pause.RebindActionsForPrivateAsset();
+            }
+
+            if (instance.TryGetComponent(out PlayerHealthHud hud))
+            {
+                hud.SetLocalHudAllowed(true);
+                hud.Initialize(cam);
+            }
+
+            if (instance.TryGetComponent(out PlayerAlarmHud alarmHud))
+            {
+                alarmHud.SetLocalHudAllowed(true);
+                alarmHud.Initialize();
+            }
+        }
+
         players.Add(player);
         RefreshViewports();
         RefreshCursor();
+    }
+
+    public void SetNetworkPlayerPrefab(GameObject prefab)
+    {
+        if (prefab != null)
+            networkPlayerPrefab = prefab;
+    }
+
+    void EnsureNetworkPlayerPrefab()
+    {
+        if (networkPlayerPrefab != null)
+            return;
+
+#if UNITY_EDITOR
+        networkPlayerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(NetworkPlayerPrefabPath);
+#endif
+        if (networkPlayerPrefab == null)
+            networkPlayerPrefab = Resources.Load<GameObject>("NetworkPlayer");
+
+        if (networkPlayerPrefab == null)
+        {
+            Debug.LogError(
+                "[Local] Asigna NetworkPlayer.prefab en LocalSplitScreenSession " +
+                $"(Inspector) o en {NetworkPlayerPrefabPath}.");
+        }
+    }
+
+    /// <summary>
+    /// Instantiate bajo padre inactivo: Awake de FishNet no corre hasta SetActive(true).
+    /// </summary>
+    GameObject InstantiateNetworkPlayerInactive()
+    {
+        if (networkPlayerPrefab == null)
+        {
+            EnsureNetworkPlayerPrefab();
+            if (networkPlayerPrefab == null)
+                return null;
+        }
+
+        var hide = new GameObject("LocalInactiveSpawn");
+        hide.SetActive(false);
+
+        GameObject instance = Object.Instantiate(networkPlayerPrefab, hide.transform, false);
+        instance.SetActive(false);
+        instance.transform.SetParent(null);
+        Object.Destroy(hide);
+        return instance;
+    }
+
+    static bool TryGetPlayerCamera(Transform root, out Camera cam)
+    {
+        cam = null;
+        Transform pivot = root.Find("CameraPivot");
+        if (pivot == null)
+            return false;
+        cam = pivot.GetComponentInChildren<Camera>(true);
+        return cam != null;
     }
 
     void RefreshViewports()
@@ -137,7 +252,9 @@ public class LocalSplitScreenSession : MonoBehaviour
         int count = players.Count;
         for (int i = 0; i < count; i++)
         {
-            Camera camera = players[i].GetComponent<PlayerMovement>().PlayerCamera;
+            if (players[i] == null || !TryGetPlayerCamera(players[i].transform, out Camera camera))
+                continue;
+
             Rect view = LobbyPlayerTransfer.ViewportFor(i, count);
             camera.rect = view;
 
@@ -154,96 +271,14 @@ public class LocalSplitScreenSession : MonoBehaviour
     {
         for (int i = 0; i < players.Count; i++)
         {
-            if (players[i].TryGetComponent(out PlayerPauseMenu menu) && menu.IsOpen)
+            if (players[i] != null
+                && players[i].TryGetComponent(out PlayerPauseMenu menu)
+                && menu.IsOpen)
                 return;
         }
 
         bool mousePlayer = keyboardJoined;
         Cursor.lockState = mousePlayer ? CursorLockMode.Locked : CursorLockMode.None;
         Cursor.visible = !mousePlayer;
-    }
-
-    GameObject CreatePlayerTemplate()
-    {
-        GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        player.name = "PlayerTemplate";
-        player.SetActive(false);
-        Destroy(player.GetComponent<CapsuleCollider>());
-
-        CharacterController controller = player.AddComponent<CharacterController>();
-        PlayerBodyMetrics.ApplyToCharacterController(controller);
-
-        var face = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        face.name = "Face";
-        Destroy(face.GetComponent<Collider>());
-        face.transform.SetParent(player.transform, false);
-        face.transform.localPosition = ArenaBuilder.FacingMarkerLocalPosition;
-        face.transform.localScale = new Vector3(0.35f, 0.22f, 0.12f);
-        ArenaBuilder.ApplyColor(face, new Color(0.08f, 0.08f, 0.1f));
-
-        var cameraPivot = new GameObject("CameraPivot").transform;
-        cameraPivot.SetParent(player.transform);
-        cameraPivot.localPosition = PlayerBodyMetrics.CameraPivotLocalPosition;
-
-        var cameraObject = new GameObject("PlayerCamera", typeof(Camera), typeof(AudioListener), typeof(UniversalAdditionalCameraData));
-        cameraObject.transform.SetParent(cameraPivot);
-        cameraObject.transform.localPosition = Vector3.zero;
-        cameraObject.transform.localRotation = Quaternion.identity;
-
-        Camera camera = cameraObject.GetComponent<Camera>();
-        camera.nearClipPlane = 0.08f;
-        camera.fieldOfView = 75f;
-        var cameraData = camera.GetUniversalAdditionalCameraData();
-        cameraData.renderType = CameraRenderType.Base;
-        cameraData.renderPostProcessing = false;
-
-        PlayerInput input = player.AddComponent<PlayerInput>();
-        if (InputSystem.actions == null)
-            Debug.LogError("No hay Input Actions asignadas en Project Settings > Input System Package.");
-        input.actions = InputSystem.actions;
-        PlayerInputUtility.EnsurePrivateActionAsset(input);
-        input.defaultActionMap = "Player";
-        input.notificationBehavior = PlayerNotifications.InvokeCSharpEvents;
-        input.camera = camera;
-        input.neverAutoSwitchControlSchemes = true;
-
-        player.AddComponent<PlayerStance>();
-        player.AddComponent<PlayerHealth>();
-        player.AddComponent<PlayerRagdoll>();
-        player.AddComponent<PerceptionTarget>();
-        player.AddComponent<FootstepNoiseEmitter>();
-
-        PlayerMovement movement = player.AddComponent<PlayerMovement>();
-        movement.Initialize(cameraPivot, camera);
-
-        PlayerGrab grab = player.AddComponent<PlayerGrab>();
-        grab.Initialize(camera);
-
-        player.AddComponent<PlayerPhotoAlbum>();
-        PlayerPhotoCapture capture = player.AddComponent<PlayerPhotoCapture>();
-        capture.Initialize(camera);
-        PlayerPauseMenu pauseMenu = player.AddComponent<PlayerPauseMenu>();
-        pauseMenu.Initialize(camera);
-
-        PlayerHealthHud healthHud = player.AddComponent<PlayerHealthHud>();
-        healthHud.SetLocalHudAllowed(true);
-        healthHud.Initialize(camera);
-
-        PlayerAlarmHud alarmHud = player.AddComponent<PlayerAlarmHud>();
-        alarmHud.SetLocalHudAllowed(true);
-        alarmHud.Initialize();
-
-        return player;
-    }
-
-    void OnGUI()
-    {
-        if (!started)
-            return;
-
-        GUI.color = Color.white;
-        GUI.Label(new Rect(16f, Screen.height - 70f, 900f, 60f),
-            "Local: Start mando = unir  |  E = coger (también cadáveres)  |  C = agachar  |  Foto / Menú\n" +
-            "HUD vida arriba-izq de cada viewport. Botón daño test. Lleva muertos al vehículo (z+) para revivir.");
     }
 }

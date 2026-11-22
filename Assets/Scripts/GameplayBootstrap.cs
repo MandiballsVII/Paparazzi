@@ -159,6 +159,7 @@ public class GameplayBootstrap : MonoBehaviour
             localSession = go.AddComponent<LocalSplitScreenSession>();
         }
 
+        // El prefab se asigna en el Inspector si el session está en escena; si se crea en runtime, carga por path.
         localSession.enabled = true;
         localSession.BeginSession();
         cachedModeLabel = "LOCAL";
@@ -173,6 +174,7 @@ public class GameplayBootstrap : MonoBehaviour
         yield return null;
         TrapController.ActivateAllForOfflinePlay();
         PressurePlateSensor.ActivateAllForOfflinePlay();
+        AlarmManager.ActivateAllForOfflinePlay();
     }
 
     void StartHost()

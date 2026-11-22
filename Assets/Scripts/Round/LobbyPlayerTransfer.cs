@@ -241,6 +241,12 @@ public static class LobbyPlayerTransfer
                 hud.Initialize(cam);
             }
 
+            if (go.TryGetComponent(out PlayerAlarmHud alarmHud))
+            {
+                alarmHud.SetLocalHudAllowed(true);
+                alarmHud.Initialize();
+            }
+
             if (go.TryGetComponent(out PlayerStance stance) && pivot != null)
                 stance.Initialize(pivot);
         }
@@ -444,6 +450,10 @@ public static class LobbyPlayerTransfer
 
         if (!go.TryGetComponent(out PlayerHealthHud _))
             go.AddComponent<PlayerHealthHud>();
+
+        // PlayerAlarmHud debe venir del prefab NetworkPlayer (YellowAlarmStars).
+        if (!go.TryGetComponent(out PlayerAlarmHud _))
+            Debug.LogWarning("[Lobby] Falta PlayerAlarmHud en el player (prefab NetworkPlayer).");
 
         if (!go.TryGetComponent(out PlayerPhotoAlbum _))
             go.AddComponent<PlayerPhotoAlbum>();

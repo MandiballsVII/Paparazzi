@@ -46,7 +46,6 @@ public class PlayerPauseMenu : MonoBehaviour
     MultiplayerEventSystem multiplayerEventSystem;
     InputSystemUIInputModule uiModule;
     GraphicRaycaster graphicRaycaster;
-    readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
     public bool IsOpen => isOpen;
 
@@ -76,9 +75,9 @@ public class PlayerPauseMenu : MonoBehaviour
         if (!isOpen)
             return;
 
-        // Fallback ratón: MultiplayerEventSystem + PlayerInput a menudo no entrega Click al uGUI
-        // (el mando sí va por Navigate/Submit). Mismo resultado que pulsar el botón.
-        TryProcessMouseUiClick();
+        // Solo asegurar cursor libre. El clic lo gestiona EventSystem/uGUI;
+        // un Invoke manual aquí duplicaba cada pulsación (fallback + OnPointerClick).
+        EnsureMouseCursorForUi();
     }
 
     void Awake()
@@ -356,11 +355,22 @@ public class PlayerPauseMenu : MonoBehaviour
                 playerCamera = pivot.GetComponentInChildren<Camera>(true);
         }
 
+        // Reusar canvas huérfano (p.ej. clon de template) en lugar de duplicar.
+        Transform existing = transform.Find("PauseMenuCanvas");
+        if (existing != null && existing.TryGetComponent(out Canvas existingCanvas))
+        {
+            BindExistingPauseCanvas(existing.gameObject, existingCanvas);
+            if (canvas != null)
+            {
+                FitRootToCameraViewport();
+                return;
+            }
+        }
+
         var canvasGo = new GameObject("PauseMenuCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvasGo.transform.SetParent(transform, false);
         canvas = canvasGo.GetComponent<Canvas>();
         graphicRaycaster = canvasGo.GetComponent<GraphicRaycaster>();
-        // Overlay + root limitado al pixelRect de la cámara → correcto en split-screen.
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 100;
         canvasRect = canvasGo.GetComponent<RectTransform>();
@@ -376,7 +386,6 @@ public class PlayerPauseMenu : MonoBehaviour
         rootPanel.transform.SetParent(canvasGo.transform, false);
         Image dim = rootPanel.GetComponent<Image>();
         dim.color = new Color(0f, 0f, 0f, 0.65f);
-        // El atenuado no debe robar raycasts a los botones hijos.
         dim.raycastTarget = false;
         rootRect = rootPanel.GetComponent<RectTransform>();
         StretchFull(rootRect);
@@ -387,6 +396,64 @@ public class PlayerPauseMenu : MonoBehaviour
         rootPanel.SetActive(false);
 
         FitRootToCameraViewport();
+    }
+
+    void BindExistingPauseCanvas(GameObject canvasGo, Canvas existingCanvas)
+    {
+        canvas = existingCanvas;
+        canvasGo.TryGetComponent(out graphicRaycaster);
+        canvasRect = canvasGo.GetComponent<RectTransform>();
+
+        Transform rootT = canvasGo.transform.Find("Root");
+        if (rootT == null)
+        {
+            // Canvas vacío/roto: destruir y dejar que el caller cree uno limpio en la próxima pasada.
+            Object.Destroy(canvasGo);
+            canvas = null;
+            return;
+        }
+
+        rootPanel = rootT.gameObject;
+        rootRect = rootT.GetComponent<RectTransform>();
+        Transform mainT = rootT.Find("MainPanel");
+        Transform photosT = rootT.Find("PhotosPanel");
+        mainPanel = mainT != null ? mainT.gameObject : null;
+        photosPanel = photosT != null ? photosT.gameObject : null;
+
+        if (mainPanel == null || photosPanel == null)
+        {
+            Object.Destroy(canvasGo);
+            canvas = null;
+            rootPanel = null;
+            mainPanel = null;
+            photosPanel = null;
+            return;
+        }
+
+        if (canvasGo.transform.Find("PlayerEventSystem") == null)
+            EnsureEventSystem(canvasGo.transform);
+        else
+        {
+            Transform es = canvasGo.transform.Find("PlayerEventSystem");
+            if (es != null)
+            {
+                multiplayerEventSystem = es.GetComponent<MultiplayerEventSystem>();
+                uiModule = es.GetComponent<InputSystemUIInputModule>();
+                ConfigureUiModule();
+            }
+        }
+
+        photosButton = mainPanel.GetComponentInChildren<Button>(true);
+        testDamageButton = FindNamedButton(mainPanel.transform, "TestDamageButton");
+        testAlarmButton = FindNamedButton(mainPanel.transform, "TestAlarmButton");
+    }
+
+    static Button FindNamedButton(Transform root, string objectName)
+    {
+        Transform t = root.Find(objectName);
+        if (t != null && t.TryGetComponent(out Button button))
+            return button;
+        return null;
     }
 
     void FitRootToCameraViewport()
@@ -448,48 +515,13 @@ public class PlayerPauseMenu : MonoBehaviour
         return string.IsNullOrEmpty(scheme) || scheme == "Keyboard&Mouse";
     }
 
-    void TryProcessMouseUiClick()
+    void EnsureMouseCursorForUi()
     {
         if (!IsKeyboardMousePlayer())
-            return;
-        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
-            return;
-        if (canvas == null)
             return;
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-
-        if (graphicRaycaster == null)
-            canvas.TryGetComponent(out graphicRaycaster);
-        if (graphicRaycaster == null)
-            return;
-
-        EventSystem eventSystem = multiplayerEventSystem != null
-            ? multiplayerEventSystem
-            : EventSystem.current;
-        if (eventSystem == null)
-            return;
-
-        var pointer = new PointerEventData(eventSystem)
-        {
-            position = Mouse.current.position.ReadValue()
-        };
-
-        uiRaycastResults.Clear();
-        graphicRaycaster.Raycast(pointer, uiRaycastResults);
-
-        for (int i = 0; i < uiRaycastResults.Count; i++)
-        {
-            Button button = uiRaycastResults[i].gameObject.GetComponentInParent<Button>();
-            if (button == null || !button.IsActive() || !button.interactable)
-                continue;
-            if (!button.transform.IsChildOf(canvas.transform))
-                continue;
-
-            button.onClick.Invoke();
-            return;
-        }
     }
 
     GameObject BuildMainPanel(Transform parent)

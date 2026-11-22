@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using FishNet;
+using FishNet.Object;
 using UnityEngine;
 
 /// <summary>
@@ -76,6 +77,28 @@ public class AlarmManager : MonoBehaviour
     {
         if (HasAuthority())
             StartDecayLoop();
+    }
+
+    /// <summary>
+    /// Local split-screen: FishNet desactiva NetworkObjects de escena sin red.
+    /// </summary>
+    public static void ActivateAllForOfflinePlay()
+    {
+        AlarmManager[] alarms = UnityEngine.Object.FindObjectsByType<AlarmManager>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int i = 0; i < alarms.Length; i++)
+        {
+            AlarmManager alarm = alarms[i];
+            if (alarm == null)
+                continue;
+
+            if (alarm.TryGetComponent(out NetworkObject nob))
+                nob.SetIsNetworked(false);
+
+            alarm.gameObject.SetActive(true);
+        }
     }
 
     public void RequestTestRaise()
