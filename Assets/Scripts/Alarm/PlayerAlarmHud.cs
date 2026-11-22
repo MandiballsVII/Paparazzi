@@ -60,6 +60,15 @@ public class PlayerAlarmHud : MonoBehaviour
         RefreshFills(AlarmManager.Instance != null ? AlarmManager.Instance.AlarmValue : 0f);
     }
 
+    void LateUpdate()
+    {
+        // Fill continuo aunque el SyncVar llegue a menos Hz (clientes) o el decay sea por frame.
+        if (!localHudAllowed || AlarmManager.Instance == null)
+            return;
+
+        RefreshFills(AlarmManager.Instance.AlarmValue);
+    }
+
     void OnDisable()
     {
         UnsubscribeAlarm();

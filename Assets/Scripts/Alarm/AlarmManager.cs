@@ -1,12 +1,12 @@
 using System;
-using System.Collections;
 using FishNet;
 using FishNet.Object;
 using UnityEngine;
 
 /// <summary>
 /// Alarma de la ronda actual (0–5). Colocar en la escena del nivel (no DDOL).
-/// Online: mismo GO con NetworkObject + NetworkAlarmManager (prefab de escena o spawnable).
+/// Online: mismo GO con NetworkObject + NetworkAlarmManager.
+/// Decay continuo (unidades/segundo) para fill suave en HUD.
 /// </summary>
 public class AlarmManager : MonoBehaviour
 {
@@ -15,11 +15,13 @@ public class AlarmManager : MonoBehaviour
     [SerializeField]
     float maxAlarm = 5f;
 
+    [Tooltip("Unidades de alarma que bajan por segundo (1 = una estrella/segundo). Ej: 0.1 ≈ estrella cada 10 s.")]
     [SerializeField]
-    float decayAmount = 0.1f;
+    float decayPerSecond = 0.1f;
 
+    [Tooltip("Cada cuántos segundos se empuja el SyncVar en online (el HUD local ya es continuo).")]
     [SerializeField]
-    float decayIntervalSeconds = 5f;
+    float networkSyncInterval = 0.1f;
 
     [Tooltip("Multiplicador de ganancia por Floor(alarm). Índice 0 = nivel 0, … 5 = nivel 5.")]
     [SerializeField]
@@ -30,12 +32,14 @@ public class AlarmManager : MonoBehaviour
 
     float alarmValue;
     float floorValue;
-    Coroutine decayRoutine;
+    float syncTimer;
+    bool decayActive;
 
     public float AlarmValue => alarmValue;
     public float FloorValue => floorValue;
     public float MaxAlarm => maxAlarm;
     public float TestRaiseAmount => testRaiseAmount;
+    public float DecayPerSecond => decayPerSecond;
 
     /// <summary>Nivel de comportamiento activo (estrella completa).</summary>
     public int ActiveLevel => Mathf.Clamp(Mathf.FloorToInt(alarmValue), 0, Mathf.FloorToInt(maxAlarm));
@@ -59,24 +63,33 @@ public class AlarmManager : MonoBehaviour
     {
         if (Instance == this)
             Instance = null;
-        StopDecayLoop();
+        decayActive = false;
     }
 
     void OnEnable()
     {
         if (HasAuthority())
-            StartDecayLoop();
+            decayActive = true;
     }
 
     void OnDisable()
     {
-        StopDecayLoop();
+        decayActive = false;
+    }
+
+    void Update()
+    {
+        if (!decayActive || !HasAuthority())
+            return;
+
+        ApplyContinuousDecay(Time.deltaTime);
     }
 
     public void NotifyNetworkAuthorityReady()
     {
-        if (HasAuthority())
-            StartDecayLoop();
+        decayActive = HasAuthority();
+        syncTimer = 0f;
+        PushNetworkSync(force: true);
     }
 
     /// <summary>
@@ -113,7 +126,6 @@ public class AlarmManager : MonoBehaviour
 
         if (TryGetComponent(out NetworkAlarmManager network) && network.ShouldForwardToServer)
         {
-            Debug.Log($"[Alarm] Client → ServerRpc +{baseAmount} (scale={scaleByLevel})");
             network.RequestAddServerRpc(baseAmount, scaleByLevel);
             return;
         }
@@ -136,7 +148,7 @@ public class AlarmManager : MonoBehaviour
             return;
 
         float before = alarmValue;
-        SetAlarmInternal(alarmValue + amount, raiseFloorFromValue: true);
+        SetAlarmInternal(alarmValue + amount, raiseFloorFromValue: true, pushNetwork: true);
         Debug.Log($"[Alarm] +{amount:0.##} → {before:0.##} → {alarmValue:0.##} (floor={floorValue:0.##})");
     }
 
@@ -159,9 +171,6 @@ public class AlarmManager : MonoBehaviour
             for (int level = previousLevel + 1; level <= newLevel; level++)
                 AlarmLevelReached?.Invoke(level);
         }
-
-        if (TryGetComponent(out NetworkAlarmManager network) && network.IsServerAuthority)
-            network.PushSync(alarmValue, floorValue);
     }
 
     public void ResetForNewRound(float startingAlarm = 0f)
@@ -170,12 +179,9 @@ public class AlarmManager : MonoBehaviour
         alarmValue = start;
         floorValue = Mathf.Floor(start);
         AlarmChanged?.Invoke(alarmValue, floorValue);
-
-        if (TryGetComponent(out NetworkAlarmManager network) && network.IsServerAuthority)
-            network.PushSync(alarmValue, floorValue);
-
-        if (HasAuthority())
-            StartDecayLoop();
+        PushNetworkSync(force: true);
+        decayActive = HasAuthority();
+        syncTimer = 0f;
     }
 
     public float GetStarFill(int starIndex)
@@ -194,7 +200,30 @@ public class AlarmManager : MonoBehaviour
         return Mathf.Max(0f, gainMultipliersByLevel[index]);
     }
 
-    void SetAlarmInternal(float nextAlarm, bool raiseFloorFromValue)
+    void ApplyContinuousDecay(float deltaTime)
+    {
+        if (decayPerSecond <= 0f || deltaTime <= 0f)
+            return;
+
+        if (ActiveLevel >= Mathf.FloorToInt(maxAlarm))
+            return;
+
+        if (alarmValue <= floorValue + 0.0001f)
+            return;
+
+        float next = alarmValue - decayPerSecond * deltaTime;
+        SetAlarmInternal(next, raiseFloorFromValue: false, pushNetwork: false);
+
+        syncTimer += deltaTime;
+        float interval = Mathf.Max(0.05f, networkSyncInterval);
+        if (syncTimer >= interval)
+        {
+            syncTimer = 0f;
+            PushNetworkSync(force: false);
+        }
+    }
+
+    void SetAlarmInternal(float nextAlarm, bool raiseFloorFromValue, bool pushNetwork)
     {
         float clamped = Mathf.Clamp(nextAlarm, floorValue, maxAlarm);
         int previousLevel = ActiveLevel;
@@ -215,22 +244,21 @@ public class AlarmManager : MonoBehaviour
 
         AlarmChanged?.Invoke(alarmValue, floorValue);
 
-        if (TryGetComponent(out NetworkAlarmManager network) && network.IsServerAuthority)
-            network.PushSync(alarmValue, floorValue);
+        if (pushNetwork)
+            PushNetworkSync(force: true);
     }
 
-    void ApplyDecayTick()
+    void PushNetworkSync(bool force)
     {
-        if (ActiveLevel >= Mathf.FloorToInt(maxAlarm))
+        if (!TryGetComponent(out NetworkAlarmManager network) || !network.IsServerAuthority)
             return;
 
-        if (alarmValue <= floorValue + 0.0001f)
-            return;
-
-        SetAlarmInternal(alarmValue - decayAmount, raiseFloorFromValue: false);
+        network.PushSync(alarmValue, floorValue);
+        if (force)
+            syncTimer = 0f;
     }
 
-    /// <summary>Offline o proceso FishNet.</summary>
+    /// <summary>Offline o servidor FishNet.</summary>
     bool HasAuthority()
     {
         var nm = InstanceFinder.NetworkManager;
@@ -238,31 +266,5 @@ public class AlarmManager : MonoBehaviour
             return true;
 
         return nm.IsServerStarted;
-    }
-
-    void StartDecayLoop()
-    {
-        StopDecayLoop();
-        decayRoutine = StartCoroutine(DecayLoop());
-    }
-
-    void StopDecayLoop()
-    {
-        if (decayRoutine == null)
-            return;
-        StopCoroutine(decayRoutine);
-        decayRoutine = null;
-    }
-
-    IEnumerator DecayLoop()
-    {
-        var wait = new WaitForSeconds(Mathf.Max(0.1f, decayIntervalSeconds));
-        while (enabled)
-        {
-            yield return wait;
-            if (!HasAuthority())
-                yield break;
-            ApplyDecayTick();
-        }
     }
 }

@@ -89,6 +89,12 @@ public class NetworkAlarmManager : NetworkBehaviour
         if (!IsServerAuthority)
             return;
 
+        // Evita ensuciar el SyncVar (y el eco en host) si casi no ha cambiado.
+        const float epsilon = 0.0005f;
+        if (Mathf.Abs(syncedAlarm.Value - alarmValue) < epsilon
+            && Mathf.Abs(syncedFloor.Value - floorValue) < epsilon)
+            return;
+
         syncedAlarm.Value = alarmValue;
         syncedFloor.Value = floorValue;
     }
@@ -107,14 +113,15 @@ public class NetworkAlarmManager : NetworkBehaviour
 
     void OnSyncedAlarmChanged(float prev, float next, bool asServer)
     {
-        if (asServer || alarm == null)
+        // Host: asServer=false en el callback de cliente reaplicaba un valor atrasado → temblor del fill.
+        if (asServer || IsServerAuthority || alarm == null)
             return;
         alarm.ApplyAuthoritativeState(next, syncedFloor.Value, invokeLevelEvents: true);
     }
 
     void OnSyncedFloorChanged(float prev, float next, bool asServer)
     {
-        if (asServer || alarm == null)
+        if (asServer || IsServerAuthority || alarm == null)
             return;
         alarm.ApplyAuthoritativeState(syncedAlarm.Value, next, invokeLevelEvents: false);
     }
