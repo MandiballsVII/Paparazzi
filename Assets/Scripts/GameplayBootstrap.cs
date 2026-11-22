@@ -175,6 +175,7 @@ public class GameplayBootstrap : MonoBehaviour
         TrapController.ActivateAllForOfflinePlay();
         PressurePlateSensor.ActivateAllForOfflinePlay();
         AlarmManager.ActivateAllForOfflinePlay();
+        SurveillanceCamera.ActivateAllForOfflinePlay();
     }
 
     void StartHost()

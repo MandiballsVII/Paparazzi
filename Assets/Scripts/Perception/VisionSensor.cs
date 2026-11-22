@@ -20,6 +20,10 @@ public class VisionSensor : MonoBehaviour
     [SerializeField]
     float eyeHeight = 2.4f;
 
+    [Tooltip("Si está asignado, el origen del cono es este transform (cámaras, etc.). Ignora eyeHeight.")]
+    [SerializeField]
+    Transform eyePoint;
+
     [SerializeField]
     float scanInterval = 0.15f;
 
@@ -74,8 +78,8 @@ public class VisionSensor : MonoBehaviour
 
         agent.ClearCurrentSight();
 
-        Vector3 eye = transform.position + Vector3.up * eyeHeight;
-        Vector3 forward = transform.forward;
+        Vector3 eye = GetEyePosition();
+        Vector3 forward = eyePoint != null ? eyePoint.forward : transform.forward;
         float halfFov = fieldOfView * 0.5f;
         float maxSqr = viewDistance * viewDistance;
 
@@ -119,17 +123,24 @@ public class VisionSensor : MonoBehaviour
         }
     }
 
+    Vector3 GetEyePosition()
+    {
+        if (eyePoint != null)
+            return eyePoint.position;
+        return transform.position + Vector3.up * eyeHeight;
+    }
+
 #if UNITY_EDITOR
     void OnDrawGizmosSelected()
     {
         if (!visionEnabled)
             return;
 
-        Vector3 eye = transform.position + Vector3.up * eyeHeight;
+        Vector3 eye = GetEyePosition();
+        Vector3 forward = eyePoint != null ? eyePoint.forward : transform.forward;
         Gizmos.color = new Color(1f, 0.85f, 0.1f, 0.35f);
         Gizmos.DrawWireSphere(eye, viewDistance);
 
-        Vector3 forward = Application.isPlaying ? transform.forward : transform.forward;
         Quaternion left = Quaternion.Euler(0f, -fieldOfView * 0.5f, 0f);
         Quaternion right = Quaternion.Euler(0f, fieldOfView * 0.5f, 0f);
         Gizmos.DrawLine(eye, eye + left * forward * viewDistance);
