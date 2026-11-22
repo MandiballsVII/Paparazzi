@@ -11,6 +11,8 @@ GameObject:
   - component: {fileID: 1203716631048679792}
   - component: {fileID: 4407051336296845916}
   - component: {fileID: 957599003649710736}
+  - component: {fileID: 8525059010969760437}
+  - component: {fileID: 8773816229778679160}
   m_Layer: 0
   m_Name: RoundSession
   m_TagString: Untagged
@@ -106,3 +108,41 @@ MonoBehaviour:
   _addedNetworkObject: {fileID: 4407051336296845916}
   _networkObjectCache: {fileID: 0}
   interiorZone: {fileID: 0}
+--- !u!114 &8525059010969760437
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8320047663530052063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bd9dd9aae3e689b4f847311ee5f123b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AlarmManager
+  maxAlarm: 5
+  decayAmount: 0.1
+  decayIntervalSeconds: 5
+  gainMultipliersByLevel:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  testRaiseAmount: 0.3
+--- !u!114 &8773816229778679160
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8320047663530052063}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e5e4abc33732df94c8051b36d0e05b4d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkAlarmManager
+  _componentIndexCache: 255
+  _addedNetworkObject: {fileID: 4407051336296845916}
+  _networkObjectCache: {fileID: 0}

@@ -208,6 +208,12 @@ public class NetworkPlayerController : NetworkBehaviour
                     listener.enabled = false;
             }
 
+            if (TryGetComponent(out PlayerHealthHud remoteHud))
+                remoteHud.SetLocalHudAllowed(false);
+
+            if (TryGetComponent(out PlayerAlarmHud remoteAlarmHud))
+                remoteAlarmHud.SetLocalHudAllowed(false);
+
             return;
         }
 
@@ -297,7 +303,22 @@ public class NetworkPlayerController : NetworkBehaviour
         }
 
         if (TryGetComponent(out PlayerHealthHud hud))
+        {
+            hud.SetLocalHudAllowed(true);
             hud.Initialize(playerCamera);
+        }
+
+        if (TryGetComponent(out PlayerAlarmHud alarmHud))
+        {
+            alarmHud.SetLocalHudAllowed(true);
+            alarmHud.Initialize();
+        }
+        else
+        {
+            Debug.LogError(
+                "[NetworkPlayer] Falta PlayerAlarmHud en el prefab. " +
+                "Tools → Paparazzi → Setup NetworkPlayer Alarm HUD.");
+        }
 
         if (offlineLocalControl)
             return;
@@ -335,17 +356,25 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void EnsureHealthSystems()
     {
+        // Preferible todo en el prefab NetworkPlayer (evitar AddComponent de NetworkBehaviours).
         if (!TryGetComponent(out health))
+        {
+            Debug.LogError("[NetworkPlayer] Falta PlayerHealth en el prefab.");
             health = gameObject.AddComponent<PlayerHealth>();
+        }
 
         if (!TryGetComponent(out NetworkPlayerHealth _))
-            gameObject.AddComponent<NetworkPlayerHealth>();
+            Debug.LogError(
+                "[NetworkPlayer] Falta NetworkPlayerHealth en el prefab. " +
+                "Tools → Paparazzi → Setup NetworkPlayer Health Network.");
 
         if (!TryGetComponent(out PlayerRagdoll _))
             gameObject.AddComponent<PlayerRagdoll>();
 
         if (!TryGetComponent(out PlayerHealthHud _))
-            gameObject.AddComponent<PlayerHealthHud>();
+            Debug.LogError(
+                "[NetworkPlayer] Falta PlayerHealthHud en el prefab. " +
+                "Tools → Paparazzi → Setup NetworkPlayer Health HUD.");
     }
 
     void BindInput()

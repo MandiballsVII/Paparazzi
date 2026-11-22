@@ -245,7 +245,10 @@ public class GymBootstrap : MonoBehaviour
                 pause.RebindActionsForPrivateAsset();
             }
             if (instance.TryGetComponent(out PlayerHealthHud hud))
+            {
+                hud.SetLocalHudAllowed(true);
                 hud.Initialize(cam);
+            }
         }
 
         players.Add(player);

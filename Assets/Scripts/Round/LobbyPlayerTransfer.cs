@@ -236,7 +236,10 @@ public static class LobbyPlayerTransfer
             }
 
             if (go.TryGetComponent(out PlayerHealthHud hud) && cam != null)
+            {
+                hud.SetLocalHudAllowed(true);
                 hud.Initialize(cam);
+            }
 
             if (go.TryGetComponent(out PlayerStance stance) && pivot != null)
                 stance.Initialize(pivot);

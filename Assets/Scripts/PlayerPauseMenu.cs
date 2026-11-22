@@ -15,8 +15,14 @@ public class PlayerPauseMenu : MonoBehaviour
 
     [SerializeField] Camera playerCamera;
 
+    [Tooltip("Botones de prueba en el menú de pausa (clicables con cursor).")]
+    [SerializeField] bool showTestDamageButton = true;
+
+    [SerializeField] bool showTestAlarmButton = true;
+
     PlayerInput playerInput;
     PlayerPhotoAlbum album;
+    PlayerHealth health;
     InputAction pauseAction;
     InputAction cancelAction;
     bool pauseBound;
@@ -35,6 +41,8 @@ public class PlayerPauseMenu : MonoBehaviour
     GridLayoutGroup photosGrid;
     readonly List<RawImage> thumbSlots = new List<RawImage>();
     Button photosButton;
+    Button testDamageButton;
+    Button testAlarmButton;
     MultiplayerEventSystem multiplayerEventSystem;
     InputSystemUIInputModule uiModule;
     GraphicRaycaster graphicRaycaster;
@@ -77,6 +85,7 @@ public class PlayerPauseMenu : MonoBehaviour
     {
         playerInput = GetComponent<PlayerInput>();
         album = GetComponent<PlayerPhotoAlbum>();
+        TryGetComponent(out health);
 
         if (playerCamera == null)
         {
@@ -490,19 +499,76 @@ public class PlayerPauseMenu : MonoBehaviour
         Image bg = panel.GetComponent<Image>();
         bg.color = new Color(0.1f, 0.1f, 0.12f, 0.95f);
 
+        bool anyTest = showTestDamageButton || showTestAlarmButton;
         RectTransform rect = panel.GetComponent<RectTransform>();
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
-        rect.sizeDelta = new Vector2(420f, 320f);
+        rect.sizeDelta = new Vector2(420f, anyTest ? 460f : 320f);
         rect.anchoredPosition = Vector2.zero;
 
-        CreateLabel(panel.transform, "Pausa", new Vector2(0f, 110f), 36);
+        float y = anyTest ? 180f : 110f;
+        CreateLabel(panel.transform, "Pausa", new Vector2(0f, y), 36);
+        y -= 70f;
 
-        photosButton = CreateButton(panel.transform, "Fotos", new Vector2(0f, 30f), OnPhotosClicked);
-        CreateButton(panel.transform, "Volver al juego", new Vector2(0f, -40f), OnResumeClicked);
-        CreateButton(panel.transform, "Salir", new Vector2(0f, -110f), OnLeaveClicked);
+        photosButton = CreateButton(panel.transform, "Fotos", new Vector2(0f, y), OnPhotosClicked);
+        y -= 70f;
+        CreateButton(panel.transform, "Volver al juego", new Vector2(0f, y), OnResumeClicked);
+        y -= 70f;
+        CreateButton(panel.transform, "Salir", new Vector2(0f, y), OnLeaveClicked);
+        y -= 70f;
+
+        if (showTestDamageButton)
+        {
+            string dmgLabel = "Daño test";
+            if (health == null)
+                TryGetComponent(out health);
+            if (health != null)
+                dmgLabel = $"Daño test (-{health.TestDamageAmount:0})";
+
+            testDamageButton = CreateButton(panel.transform, dmgLabel, new Vector2(0f, y), OnTestDamageClicked);
+            testDamageButton.gameObject.name = "TestDamageButton";
+            y -= 70f;
+        }
+
+        if (showTestAlarmButton)
+        {
+            testAlarmButton = CreateButton(panel.transform, "Alarma test (+0.3)", new Vector2(0f, y), OnTestAlarmClicked);
+            testAlarmButton.gameObject.name = "TestAlarmButton";
+        }
 
         return panel;
+    }
+
+    void OnTestDamageClicked()
+    {
+        if (health == null)
+            TryGetComponent(out health);
+        if (health == null)
+        {
+            Debug.LogWarning("[Pause] Sin PlayerHealth.");
+            return;
+        }
+
+        Debug.Log($"[Pause] Daño test → {health.TestDamageAmount} (vida={health.CurrentHealth})");
+        health.DealTestDamage();
+    }
+
+    void OnTestAlarmClicked()
+    {
+        AlarmManager alarm = AlarmManager.Instance != null
+            ? AlarmManager.Instance
+            : Object.FindAnyObjectByType<AlarmManager>();
+
+        if (alarm == null)
+        {
+            Debug.LogWarning(
+                "[Pause] No hay AlarmManager. Colócalo en la escena Gameplay " +
+                "(local) o asegúrate de que el prefab online está spawneado.");
+            return;
+        }
+
+        Debug.Log($"[Pause] Alarma test (actual={alarm.AlarmValue:0.##})");
+        alarm.RequestTestRaise();
     }
 
     GameObject BuildPhotosPanel(Transform parent)

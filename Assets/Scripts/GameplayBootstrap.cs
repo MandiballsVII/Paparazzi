@@ -33,6 +33,8 @@ public class GameplayBootstrap : MonoBehaviour
         EnsureEscapeVehicleExtract();
         EnsureCelebritySpawner();
         EnsureRoundSessionSpawner();
+        EnsureAlarmManagerSpawner();
+        EnsureAlarmManagerForLocalIfNeeded();
 
         switch (GameSessionConfig.Mode)
         {
@@ -119,6 +121,28 @@ public class GameplayBootstrap : MonoBehaviour
         go.AddComponent<RoundSessionSpawner>();
     }
 
+    static void EnsureAlarmManagerSpawner()
+    {
+        if (Object.FindAnyObjectByType<AlarmManagerSpawner>() != null)
+            return;
+        var go = new GameObject("AlarmManagerSpawner");
+        go.AddComponent<AlarmManagerSpawner>();
+    }
+
+    static void EnsureAlarmManagerForLocalIfNeeded()
+    {
+        // Preferible: AlarmManager colocado en la escena Gameplay (editable).
+        if (GameSessionConfig.Mode != GamePlayMode.LocalSplitScreen)
+            return;
+
+        if (AlarmManager.Instance != null || Object.FindAnyObjectByType<AlarmManager>() != null)
+            return;
+
+        Debug.LogError(
+            "[Alarm] No hay AlarmManager en la escena. " +
+            "Crea un GameObject vacío 'AlarmManager' en Gameplay y añade el componente AlarmManager.");
+    }
+
     void StartLocal()
     {
         if (networkManager != null)
@@ -126,6 +150,8 @@ public class GameplayBootstrap : MonoBehaviour
 
         if (onlineArenaSpawner != null)
             onlineArenaSpawner.enabled = false;
+
+        EnsureAlarmManagerForLocalIfNeeded();
 
         if (localSession == null)
         {

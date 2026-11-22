@@ -1,4 +1,5 @@
 using System;
+using FishNet.Object;
 using UnityEngine;
 
 public class PlayerHealth : MonoBehaviour
@@ -36,8 +37,7 @@ public class PlayerHealth : MonoBehaviour
         if (isDead || amount <= 0f)
             return;
 
-        // Si hay componente de red, la autoridad la tiene el servidor.
-        if (TryGetComponent(out NetworkPlayerHealth networkHealth) && networkHealth.IsSpawned)
+        if (TryGetNetworkHealth(out NetworkPlayerHealth networkHealth))
         {
             networkHealth.RequestDamage(amount);
             return;
@@ -68,7 +68,7 @@ public class PlayerHealth : MonoBehaviour
         if (!isDead)
             return;
 
-        if (TryGetComponent(out NetworkPlayerHealth networkHealth) && networkHealth.IsSpawned)
+        if (TryGetNetworkHealth(out NetworkPlayerHealth networkHealth))
         {
             networkHealth.RequestRevive(healthAmount);
             return;
@@ -112,5 +112,21 @@ public class PlayerHealth : MonoBehaviour
     public void DealTestDamage()
     {
         TakeDamage(testDamageAmount);
+    }
+
+    /// <summary>
+    /// Solo usa red si NetworkPlayerHealth está en el prefab (spawneado) y el NetworkObject es válido.
+    /// </summary>
+    bool TryGetNetworkHealth(out NetworkPlayerHealth networkHealth)
+    {
+        networkHealth = null;
+        if (!TryGetComponent(out networkHealth) || networkHealth == null)
+            return false;
+
+        // Nunca tocar NetworkBehaviour.IsSpawned si el NB se añadió en runtime (cache nula).
+        if (!TryGetComponent(out NetworkObject nob) || nob == null || !nob.IsSpawned)
+            return false;
+
+        return true;
     }
 }

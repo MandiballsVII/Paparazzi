@@ -226,7 +226,12 @@ public class LocalSplitScreenSession : MonoBehaviour
         pauseMenu.Initialize(camera);
 
         PlayerHealthHud healthHud = player.AddComponent<PlayerHealthHud>();
+        healthHud.SetLocalHudAllowed(true);
         healthHud.Initialize(camera);
+
+        PlayerAlarmHud alarmHud = player.AddComponent<PlayerAlarmHud>();
+        alarmHud.SetLocalHudAllowed(true);
+        alarmHud.Initialize();
 
         return player;
     }
