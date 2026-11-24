@@ -113,8 +113,6 @@ public static class CelebritySetup
             return;
         }
 
-        MarkNavigationStaticRecursive(floor);
-
         // Paredes / vehículo estáticos. No marcar rigidbodies dinámicos (cajas, esferas).
         foreach (GameObject root in gameplay.GetRootGameObjects())
         {
@@ -125,7 +123,6 @@ public static class CelebritySetup
             if (root.GetComponentInChildren<MeshCollider>() == null
                 && root.GetComponentInChildren<BoxCollider>() == null)
                 continue;
-            MarkNavigationStaticRecursive(root);
         }
 
         if (!floor.TryGetComponent(out NavMeshSurface surface))
@@ -195,16 +192,6 @@ public static class CelebritySetup
     static void SetupFloorNavMeshQuiet()
     {
         SetupFloorNavMesh(showDialog: false);
-    }
-
-    static void MarkNavigationStaticRecursive(GameObject root)
-    {
-        StaticEditorFlags flags =
-            GameObjectUtility.GetStaticEditorFlags(root) | StaticEditorFlags.NavigationStatic;
-        GameObjectUtility.SetStaticEditorFlags(root, flags);
-
-        foreach (Transform child in root.transform)
-            MarkNavigationStaticRecursive(child.gameObject);
     }
 
     static GameObject BuildCelebrity()

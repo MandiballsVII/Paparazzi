@@ -11,7 +11,6 @@ public class HostPlayerSpawnFallback : MonoBehaviour
     [SerializeField] Transform[] spawns;
 
     NetworkManager nm;
-    bool spawnedLocal;
 
     void OnEnable()
     {
@@ -44,7 +43,6 @@ public class HostPlayerSpawnFallback : MonoBehaviour
 
         NetworkObject nob = nm.GetPooledInstantiated(playerPrefab, pos, rot, true);
         nm.ServerManager.Spawn(nob, conn);
-        spawnedLocal = true;
         Debug.Log($"Fallback spawn player for client {conn.ClientId}");
     }
 }

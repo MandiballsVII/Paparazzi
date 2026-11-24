@@ -65,8 +65,9 @@ public class SurveillanceCamera : NetworkBehaviour
         ApplyVisionEnabled();
     }
 
-    void OnValidate()
+    protected override void OnValidate()
     {
+        base.OnValidate();
         AutoWire();
         if (!Application.isPlaying)
         {
@@ -79,7 +80,8 @@ public class SurveillanceCamera : NetworkBehaviour
     {
         SurveillanceCamera[] cameras = FindObjectsByType<SurveillanceCamera>(
             FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
+            FindObjectsSortMode.None
+        );
 
         for (int i = 0; i < cameras.Length; i++)
         {
@@ -223,7 +225,10 @@ public class SurveillanceCamera : NetworkBehaviour
             if (!loggedMissingSpawn)
             {
                 loggedMissingSpawn = true;
-                Debug.LogWarning("[SurveillanceCamera] NetworkObject no spawneado; lógica en pausa.", this);
+                Debug.LogWarning(
+                    "[SurveillanceCamera] NetworkObject no spawneado; lógica en pausa.",
+                    this
+                );
             }
 
             return false;
