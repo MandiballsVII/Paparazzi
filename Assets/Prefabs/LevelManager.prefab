@@ -190,7 +190,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AlarmManager
   maxAlarm: 5
-  decayPerSecond: 0.1
+  decayPerSecond: 0.01
   networkSyncInterval: 0.1
   gainMultipliersByLevel:
   - 1
