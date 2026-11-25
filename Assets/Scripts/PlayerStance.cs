@@ -8,13 +8,13 @@ using UnityEngine;
 public class PlayerStance : MonoBehaviour
 {
     [SerializeField]
-    float standHeight = 2f;
+    float standHeight = 1f;
 
     [SerializeField]
-    float crouchHeight = 1f;
+    float crouchHeight = 0.5f;
 
     [SerializeField]
-    float standCameraY = 0.75f;
+    float standCameraY = 0.3f;
 
     [SerializeField]
     float crouchCameraY = 0.15f;
@@ -94,7 +94,7 @@ public class PlayerStance : MonoBehaviour
 
         controller.height = height;
         controller.center = new Vector3(0f, centerY, 0f);
-        controller.radius = 0.5f;
+        controller.radius = 0.25f;
 
         if (cameraPivot != null)
         {
@@ -105,8 +105,12 @@ public class PlayerStance : MonoBehaviour
 
         if (bodyVisual != null)
         {
-            float scaleY = height / standHeight;
-            bodyVisual.localScale = new Vector3(1f, scaleY, 1f);
+            // Mesh cápsula Unity ≈ 2 m de alto con scale 1.
+            const float unityCapsuleMeshHeight = 2f;
+            float standScale = standHeight / unityCapsuleMeshHeight; // 1/2 = 0.5
+            float stanceFactor = height / standHeight; // 1 de pie, 0.5 agachado
+
+            bodyVisual.localScale = new Vector3(standScale, standScale * stanceFactor, standScale);
             // Compensa el escalado desde el centro para que los pies no floten.
             bodyVisual.localPosition = new Vector3(0f, centerY, 0f);
         }
@@ -146,7 +150,10 @@ public class PlayerStance : MonoBehaviour
 
         if (bodyVisual == null)
         {
-            if (!TryGetComponent(out MeshFilter rootFilter) || !TryGetComponent(out MeshRenderer rootRenderer))
+            if (
+                !TryGetComponent(out MeshFilter rootFilter)
+                || !TryGetComponent(out MeshRenderer rootRenderer)
+            )
                 return;
 
             var bodyGo = new GameObject("Body");

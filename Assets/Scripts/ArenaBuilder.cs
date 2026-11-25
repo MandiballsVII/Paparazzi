@@ -7,14 +7,14 @@ public static class ArenaBuilder
         new Color(0.90f, 0.25f, 0.25f),
         new Color(0.25f, 0.45f, 0.95f),
         new Color(0.25f, 0.80f, 0.35f),
-        new Color(0.95f, 0.85f, 0.20f)
+        new Color(0.95f, 0.85f, 0.20f),
     };
 
     public static Vector3 SpawnPosition(int index)
     {
-        // CharacterController centrado (height 2) → transform en el centro; pies en y=0 con spawn.y=1.
+        // CharacterController centrado (height 1) → transform en el centro; pies en y=0 con spawn.y=0.5.
         float x = (index - 1.5f) * 1.6f;
-        return new Vector3(x, 1f, 6f);
+        return new Vector3(x, 0.5f, 6f);
     }
 
     /// <summary>
@@ -40,12 +40,48 @@ public static class ArenaBuilder
         Color rampColor = new Color(0.4f, 0.32f, 0.18f);
         Color cabinColor = new Color(0.2f, 0.22f, 0.35f);
 
-        CreateStaticBoxLocal(vehicle.transform, "CargoFloor", new Vector3(0f, 0.55f, 0.5f), new Vector3(3.6f, 0.2f, 5.5f), bodyColor);
-        CreateStaticBoxLocal(vehicle.transform, "WallLeft", new Vector3(-1.9f, 1.7f, 0.5f), new Vector3(0.15f, 2.2f, 5.5f), bodyColor);
-        CreateStaticBoxLocal(vehicle.transform, "WallRight", new Vector3(1.9f, 1.7f, 0.5f), new Vector3(0.15f, 2.2f, 5.5f), bodyColor);
-        CreateStaticBoxLocal(vehicle.transform, "WallFront", new Vector3(0f, 1.7f, 3.2f), new Vector3(3.9f, 2.2f, 0.15f), bodyColor);
-        CreateStaticBoxLocal(vehicle.transform, "Roof", new Vector3(0f, 2.85f, 0.5f), new Vector3(3.9f, 0.12f, 5.5f), bodyColor);
-        CreateStaticBoxLocal(vehicle.transform, "Cabin", new Vector3(0f, 1.5f, 4.4f), new Vector3(3.2f, 1.8f, 1.8f), cabinColor);
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "CargoFloor",
+            new Vector3(0f, 0.55f, 0.5f),
+            new Vector3(3.6f, 0.2f, 5.5f),
+            bodyColor
+        );
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "WallLeft",
+            new Vector3(-1.9f, 1.7f, 0.5f),
+            new Vector3(0.15f, 2.2f, 5.5f),
+            bodyColor
+        );
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "WallRight",
+            new Vector3(1.9f, 1.7f, 0.5f),
+            new Vector3(0.15f, 2.2f, 5.5f),
+            bodyColor
+        );
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "WallFront",
+            new Vector3(0f, 1.7f, 3.2f),
+            new Vector3(3.9f, 2.2f, 0.15f),
+            bodyColor
+        );
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "Roof",
+            new Vector3(0f, 2.85f, 0.5f),
+            new Vector3(3.9f, 0.12f, 5.5f),
+            bodyColor
+        );
+        CreateStaticBoxLocal(
+            vehicle.transform,
+            "Cabin",
+            new Vector3(0f, 1.5f, 4.4f),
+            new Vector3(3.2f, 1.8f, 1.8f),
+            cabinColor
+        );
 
         // Rampa trasera (apertura en -Z local).
         var ramp = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -56,7 +92,12 @@ public static class ArenaBuilder
         ramp.transform.localScale = new Vector3(3.2f, 0.12f, 3.2f);
         ApplyColor(ramp, rampColor);
 
-        var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone), typeof(VehicleInteriorZone));
+        var zone = new GameObject(
+            "ReviveZone",
+            typeof(BoxCollider),
+            typeof(PlayerReviveZone),
+            typeof(VehicleInteriorZone)
+        );
         zone.transform.SetParent(vehicle.transform, false);
         zone.transform.localPosition = new Vector3(0f, 1.4f, 0.4f);
         BoxCollider trigger = zone.GetComponent<BoxCollider>();
@@ -105,7 +146,12 @@ public static class ArenaBuilder
         VehicleInteriorZone interior;
         if (zoneT == null)
         {
-            var zone = new GameObject("ReviveZone", typeof(BoxCollider), typeof(PlayerReviveZone), typeof(VehicleInteriorZone));
+            var zone = new GameObject(
+                "ReviveZone",
+                typeof(BoxCollider),
+                typeof(PlayerReviveZone),
+                typeof(VehicleInteriorZone)
+            );
             zone.transform.SetParent(vehicle.transform, false);
             zone.transform.localPosition = new Vector3(0f, 1.4f, 0.4f);
             BoxCollider trigger = zone.GetComponent<BoxCollider>();
@@ -126,13 +172,55 @@ public static class ArenaBuilder
 
     public static void BuildLocalPhysicsProps(Transform parent)
     {
-        CreateLocalPhysicsBox(parent, new Vector3(-2f, 0.6f, 0f), Vector3.one, 2.5f, new Color(0.85f, 0.45f, 0.15f));
-        CreateLocalPhysicsBox(parent, new Vector3(0f, 0.6f, -1.5f), new Vector3(1.2f, 1.2f, 1.2f), 4f, new Color(0.2f, 0.6f, 0.8f));
-        CreateLocalPhysicsBox(parent, new Vector3(2.2f, 0.4f, 0.4f), new Vector3(0.8f, 0.8f, 0.8f), 1.5f, new Color(0.75f, 0.2f, 0.45f));
-        CreateLocalPhysicsBox(parent, new Vector3(-1.2f, 1.7f, 0f), new Vector3(0.7f, 0.7f, 0.7f), 1.2f, new Color(0.9f, 0.85f, 0.2f));
-        CreateLocalPhysicsBox(parent, new Vector3(4f, 0.5f, -3f), Vector3.one, 3f, new Color(0.4f, 0.8f, 0.35f));
-        CreateLocalPhysicsSphere(parent, new Vector3(1.4f, 0.5f, 2f), 0.45f, 1.4f, new Color(0.95f, 0.55f, 0.2f));
-        CreateLocalPhysicsSphere(parent, new Vector3(-4f, 0.5f, -2f), 0.6f, 2.2f, new Color(0.55f, 0.3f, 0.8f));
+        CreateLocalPhysicsBox(
+            parent,
+            new Vector3(-2f, 0.6f, 0f),
+            Vector3.one,
+            2.5f,
+            new Color(0.85f, 0.45f, 0.15f)
+        );
+        CreateLocalPhysicsBox(
+            parent,
+            new Vector3(0f, 0.6f, -1.5f),
+            new Vector3(1.2f, 1.2f, 1.2f),
+            4f,
+            new Color(0.2f, 0.6f, 0.8f)
+        );
+        CreateLocalPhysicsBox(
+            parent,
+            new Vector3(2.2f, 0.4f, 0.4f),
+            new Vector3(0.8f, 0.8f, 0.8f),
+            1.5f,
+            new Color(0.75f, 0.2f, 0.45f)
+        );
+        CreateLocalPhysicsBox(
+            parent,
+            new Vector3(-1.2f, 1.7f, 0f),
+            new Vector3(0.7f, 0.7f, 0.7f),
+            1.2f,
+            new Color(0.9f, 0.85f, 0.2f)
+        );
+        CreateLocalPhysicsBox(
+            parent,
+            new Vector3(4f, 0.5f, -3f),
+            Vector3.one,
+            3f,
+            new Color(0.4f, 0.8f, 0.35f)
+        );
+        CreateLocalPhysicsSphere(
+            parent,
+            new Vector3(1.4f, 0.5f, 2f),
+            0.45f,
+            1.4f,
+            new Color(0.95f, 0.55f, 0.2f)
+        );
+        CreateLocalPhysicsSphere(
+            parent,
+            new Vector3(-4f, 0.5f, -2f),
+            0.6f,
+            2.2f,
+            new Color(0.55f, 0.3f, 0.8f)
+        );
     }
 
     public static Material CreateLitMaterial(Color color)
@@ -167,9 +255,15 @@ public static class ArenaBuilder
     }
 
     /// <summary>Marcador de orientación a la altura de los pies (no tapa la cámara FPS).</summary>
-    public static Vector3 FacingMarkerLocalPosition => new Vector3(0f, -0.95f, 0.42f);
+    public static Vector3 FacingMarkerLocalPosition => new Vector3(0f, -0.45f, 0.42f);
 
-    static void CreateStaticBoxLocal(Transform parent, string name, Vector3 localPosition, Vector3 scale, Color color)
+    static void CreateStaticBoxLocal(
+        Transform parent,
+        string name,
+        Vector3 localPosition,
+        Vector3 scale,
+        Color color
+    )
     {
         GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
         box.name = name;
@@ -185,7 +279,13 @@ public static class ArenaBuilder
             box.layer = EnvironmentLayers.Floor;
     }
 
-    static void CreateLocalPhysicsBox(Transform parent, Vector3 position, Vector3 scale, float mass, Color color)
+    static void CreateLocalPhysicsBox(
+        Transform parent,
+        Vector3 position,
+        Vector3 scale,
+        float mass,
+        Color color
+    )
     {
         GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
         box.name = "PhysicsBox";
@@ -202,7 +302,13 @@ public static class ArenaBuilder
         box.AddComponent<ImpactNoiseEmitter>();
     }
 
-    static void CreateLocalPhysicsSphere(Transform parent, Vector3 position, float radius, float mass, Color color)
+    static void CreateLocalPhysicsSphere(
+        Transform parent,
+        Vector3 position,
+        float radius,
+        float mass,
+        Color color
+    )
     {
         GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         sphere.name = "PhysicsSphere";
@@ -219,4 +325,3 @@ public static class ArenaBuilder
         sphere.AddComponent<ImpactNoiseEmitter>();
     }
 }
-
