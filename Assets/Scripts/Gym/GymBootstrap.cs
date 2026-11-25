@@ -53,7 +53,9 @@ public class GymBootstrap : MonoBehaviour
 
         if (networkPlayerPrefab == null)
         {
-            Debug.LogError("[GymBootstrap] Falta NetworkPlayer.prefab. Asigna el prefab en el inspector.");
+            Debug.LogError(
+                "[GymBootstrap] Falta NetworkPlayer.prefab. Asigna el prefab en el inspector."
+            );
             return;
         }
 
@@ -90,7 +92,9 @@ public class GymBootstrap : MonoBehaviour
             return;
 
 #if UNITY_EDITOR
-        networkPlayerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+        networkPlayerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            PlayerPrefabPath
+        );
 #endif
     }
 
@@ -168,11 +172,13 @@ public class GymBootstrap : MonoBehaviour
 
         instance.name = $"GymPlayer {index + 1}";
 
-        if (instance.TryGetComponent(out PlayerInput earlyInput))
-            PlayerInputUtility.EnsurePrivateActionAsset(earlyInput);
-
-        // Quitar FishNet antes de activar (evita error de NetworkObject.Awake).
-        LobbyPlayerTransfer.PrepareOfflineClone(instance, keepControl: true);
+        // Quitar FishNet antes de activar. Scheme/map tras SetActive.
+        LobbyPlayerTransfer.PrepareOfflineClone(
+            instance,
+            keepControl: true,
+            controlScheme,
+            devices
+        );
 
         if (instance.TryGetComponent(out CharacterController controller))
         {
@@ -201,18 +207,9 @@ public class GymBootstrap : MonoBehaviour
             return;
         }
 
-        player.neverAutoSwitchControlSchemes = true;
-        PlayerInputUtility.EnsurePrivateActionAsset(player);
-        try
-        {
-            player.SwitchCurrentControlScheme(controlScheme, devices);
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[GymBootstrap] No se pudo emparejar input: {e.Message}");
-        }
-
-        player.enabled = true;
+        LobbyPlayerTransfer.ActivatePlayerInput(player, controlScheme, devices);
+        if (instance.TryGetComponent(out PlayerMovement movement))
+            movement.RebindActions();
 
         Rect viewport = LobbyPlayerTransfer.ViewportFor(index, index + 1);
         int color = index % ArenaBuilder.PlayerColors.Length;
@@ -230,7 +227,7 @@ public class GymBootstrap : MonoBehaviour
                 cameraData.renderPostProcessing = false;
             }
 
-            if (instance.TryGetComponent(out PlayerMovement movement))
+            if (movement != null)
                 movement.Initialize(instance.transform.Find("CameraPivot"), cam);
             if (instance.TryGetComponent(out PlayerGrab grab))
                 grab.Initialize(cam);
@@ -335,6 +332,7 @@ public class GymBootstrap : MonoBehaviour
         GUI.color = Color.white;
         GUI.Label(
             new Rect(16f, Screen.height - 50f, 900f, 40f),
-            "GYM: Start mando = unir  |  NetworkPlayer offline (sin FishNet)  |  Spawn_0..N");
+            "GYM: Start mando = unir  |  NetworkPlayer offline (sin FishNet)  |  Spawn_0..N"
+        );
     }
 }

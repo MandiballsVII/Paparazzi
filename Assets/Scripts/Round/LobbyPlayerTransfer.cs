@@ -150,11 +150,41 @@ public static class LobbyPlayerTransfer
 
     /// <summary>
     /// Quita FishNet de un clone (Gym/Lobby). No modificar el prefab asset.
+    /// Si el GO está inactivo, el ActionAsset se clona pero el scheme/map se aplica
+    /// con <see cref="ActivatePlayerInput"/> tras SetActive(true).
     /// </summary>
-    public static void PrepareOfflineClone(GameObject go, bool keepControl = true)
+    public static void PrepareOfflineClone(
+        GameObject go,
+        bool keepControl = true,
+        string controlScheme = null,
+        InputDevice[] devices = null)
     {
         StripNetworkComponents(go);
-        RebindLocalComponents(go, keepControl, forceNewActionAsset: keepControl);
+        RebindLocalComponents(
+            go,
+            keepControl,
+            forceNewActionAsset: keepControl,
+            controlScheme,
+            devices);
+    }
+
+    /// <summary>
+    /// Empareja scheme + mapa Player cuando el GO ya está activo (InputUser válido).
+    /// </summary>
+    public static void ActivatePlayerInput(
+        PlayerInput input,
+        string controlScheme = null,
+        InputDevice[] devices = null)
+    {
+        if (input == null)
+            return;
+
+        input.neverAutoSwitchControlSchemes = true;
+        ConfigureLobbyPlayerInput(
+            input,
+            forceNewActionAsset: false,
+            controlScheme,
+            devices);
     }
 
     public static void StripNetworkComponents(GameObject go)
@@ -291,8 +321,12 @@ public static class LobbyPlayerTransfer
             PlayerInputUtility.EnsurePrivateActionAsset(input);
 
         input.defaultActionMap = "Player";
-        input.enabled = true;
 
+        // Sin GO activo no hay InputUser → SwitchControlScheme / ActionMap fallan.
+        if (!input.gameObject.activeInHierarchy)
+            return;
+
+        input.enabled = true;
         TryApplyControlScheme(input, controlScheme, devices);
 
         try

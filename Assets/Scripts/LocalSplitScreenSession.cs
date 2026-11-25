@@ -102,11 +102,13 @@ public class LocalSplitScreenSession : MonoBehaviour
 
         instance.name = $"NetworkPlayer (Local {index + 1})";
 
-        if (instance.TryGetComponent(out PlayerInput earlyInput))
-            PlayerInputUtility.EnsurePrivateActionAsset(earlyInput);
-
         // Quitar FishNet antes de activar (evita error de NetworkObject.Awake).
-        LobbyPlayerTransfer.PrepareOfflineClone(instance, keepControl: true);
+        // Input scheme/map se aplican tras SetActive (InputUser válido).
+        LobbyPlayerTransfer.PrepareOfflineClone(
+            instance,
+            keepControl: true,
+            controlScheme,
+            devices);
 
         if (instance.TryGetComponent(out CharacterController controller))
         {
@@ -129,18 +131,9 @@ public class LocalSplitScreenSession : MonoBehaviour
             return;
         }
 
-        player.neverAutoSwitchControlSchemes = true;
-        PlayerInputUtility.EnsurePrivateActionAsset(player);
-        try
-        {
-            player.SwitchCurrentControlScheme(controlScheme, devices);
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[Local] No se pudo emparejar input: {e.Message}");
-        }
-
-        player.enabled = true;
+        LobbyPlayerTransfer.ActivatePlayerInput(player, controlScheme, devices);
+        if (instance.TryGetComponent(out PlayerMovement movement))
+            movement.RebindActions();
 
         Rect viewport = LobbyPlayerTransfer.ViewportFor(index, index + 1);
         int color = index % ArenaBuilder.PlayerColors.Length;
