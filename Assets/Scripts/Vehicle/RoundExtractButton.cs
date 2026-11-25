@@ -22,6 +22,7 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
     Text worldPrompt;
     Text feedbackText;
     float feedbackUntil;
+    bool stickyFeedback;
 
     public string Prompt => prompt;
     public float InteractDistance => interactDistance;
@@ -45,10 +46,30 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
         interiorZone = zone;
     }
 
+    /// <summary>Feedback en el prompt del van (todos los peers / offline).</summary>
+    public static void NotifyExtractStatus(string message, bool sticky)
+    {
+        RoundExtractButton button = Object.FindAnyObjectByType<RoundExtractButton>();
+        if (button != null)
+            button.ShowFeedback(message, sticky);
+        else
+            Debug.LogWarning($"[RoundExtract] {message}");
+    }
+
     void Update()
     {
         if (feedbackText == null)
             return;
+
+        // Mientras dura el extract, mantener el mensaje aunque caduque el timer.
+        if (MatchSessionExit.IsExtractInProgress && stickyFeedback)
+        {
+            feedbackText.enabled = true;
+            return;
+        }
+
+        if (stickyFeedback && !MatchSessionExit.IsExtractInProgress)
+            stickyFeedback = false;
 
         if (Time.time < feedbackUntil)
         {
@@ -68,7 +89,7 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
     {
         NetworkRoundExtract extract = NetworkRoundExtract.Instance;
         if (extract == null)
-            extract = FindAnyObjectByType<NetworkRoundExtract>();
+            extract = FindAnyObjectByType<NetworkRoundExtract>(FindObjectsInactive.Include);
 
         if (extract != null)
         {
@@ -79,7 +100,18 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
             return;
         }
 
-        // Fallback local sin NetworkRoundExtract.
+        bool online = GameSessionConfig.Mode == GamePlayMode.OnlineHost
+                      || GameSessionConfig.Mode == GamePlayMode.OnlineClient;
+        if (online)
+        {
+            ShowFeedback("Falta RoundSession / LevelManager en el nivel.");
+            Debug.LogError(
+                "[RoundExtract] Sin NetworkRoundExtract. Coloca LevelManager en la escena de gameplay.",
+                this);
+            return;
+        }
+
+        // Solo offline / local sin LevelManager.
         if (!TryValidateExtractionLocal(out string localFail, out bool victory))
         {
             ShowFeedback(localFail);
@@ -126,16 +158,20 @@ public class RoundExtractButton : MonoBehaviour, IPlayerInteractable
         return true;
     }
 
-    public void ShowFeedbackPublic(string message) => ShowFeedback(message);
+    public void ShowFeedbackPublic(string message) => ShowFeedback(message, sticky: false);
 
-    void ShowFeedback(string message)
+    void ShowFeedback(string message, bool sticky = false)
     {
         EnsurePromptLabel();
         if (feedbackText == null)
             return;
 
         feedbackText.text = message;
-        feedbackUntil = Time.time + feedbackSeconds;
+        stickyFeedback = sticky;
+        feedbackUntil = sticky
+            ? float.PositiveInfinity
+            : Time.time + feedbackSeconds;
+        feedbackText.enabled = true;
         Debug.Log($"[RoundExtract] {message}", this);
     }
 

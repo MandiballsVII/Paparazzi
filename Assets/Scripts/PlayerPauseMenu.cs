@@ -155,11 +155,14 @@ public class PlayerPauseMenu : MonoBehaviour
 
     void OnPausePerformed(InputAction.CallbackContext context)
     {
-        if (MatchSessionExit.IsExtractInProgress)
-            return;
-
         if (!IsContextFromThisPlayer(context))
             return;
+
+        if (MatchSessionExit.IsExtractInProgress)
+        {
+            RoundExtractButton.NotifyExtractStatus("Finalizando ronda...", sticky: true);
+            return;
+        }
 
         if (!CanSwitchActionMaps())
             return;

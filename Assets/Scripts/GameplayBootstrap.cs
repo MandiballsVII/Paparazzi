@@ -10,9 +10,7 @@ public class GameplayBootstrap : MonoBehaviour
     [SerializeField] NetworkManager networkManager;
     [SerializeField] LocalSplitScreenSession localSession;
     [SerializeField] OnlineArenaSpawner onlineArenaSpawner;
-    [SerializeField] GameObject celebrityPrefab;
-    [SerializeField] NetworkObject networkCelebrityPrefab;
-    [SerializeField] CelebritySpawner celebritySpawner;
+    [SerializeField] LevelManager levelManager;
 
     // Cacheado: FormatLocalAddressesForDisplay() en OnGUI cada frame mataba al host (~8ms + GC).
     string cachedModeLabel = string.Empty;
@@ -31,10 +29,7 @@ public class GameplayBootstrap : MonoBehaviour
         RoundObjectiveState.Clear();
         DisableSceneCamera();
         EnsureEscapeVehicleExtract();
-        EnsureCelebritySpawner();
-        EnsureRoundSessionSpawner();
-        EnsureAlarmManagerSpawner();
-        EnsureAlarmManagerForLocalIfNeeded();
+        ResolveLevelManager();
 
         switch (GameSessionConfig.Mode)
         {
@@ -50,50 +45,19 @@ public class GameplayBootstrap : MonoBehaviour
         }
     }
 
-    void EnsureCelebritySpawner()
+    void ResolveLevelManager()
     {
-        if (celebritySpawner == null)
-            celebritySpawner = FindAnyObjectByType<CelebritySpawner>();
+        if (levelManager == null)
+            levelManager = LevelManager.Instance;
+        if (levelManager == null)
+            levelManager = FindAnyObjectByType<LevelManager>(FindObjectsInactive.Include);
 
-        if (celebritySpawner == null)
+        if (levelManager == null)
         {
-            var go = new GameObject("CelebritySpawner");
-            celebritySpawner = go.AddComponent<CelebritySpawner>();
+            Debug.LogError(
+                "[GameplayBootstrap] No hay LevelManager en la escena. " +
+                "Tools > Paparazzi > Place Level Manager In Gameplay.");
         }
-
-        if (celebrityPrefab == null)
-        {
-#if UNITY_EDITOR
-            celebrityPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                "Assets/Prefabs/Celebrity.prefab");
-#endif
-            if (celebrityPrefab == null)
-            {
-                Debug.LogError(
-                    "[GameplayBootstrap] Asigna Celebrity prefab en el inspector " +
-                    "(Assets/Prefabs/Celebrity.prefab).");
-            }
-        }
-
-        if (networkCelebrityPrefab == null)
-        {
-#if UNITY_EDITOR
-            GameObject netGo = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-                "Assets/Prefabs/NetworkCelebrity.prefab");
-            if (netGo != null)
-                networkCelebrityPrefab = netGo.GetComponent<NetworkObject>();
-#endif
-        }
-
-        celebritySpawner.SetLocalPrefab(celebrityPrefab);
-        celebritySpawner.SetNetworkPrefab(networkCelebrityPrefab);
-    }
-
-    void SpawnCelebrityForSession(bool networked)
-    {
-        EnsureCelebritySpawner();
-        if (celebritySpawner != null)
-            celebritySpawner.SpawnAtLevelStart(networked);
     }
 
     static void EnsureEscapeVehicleExtract()
@@ -113,36 +77,6 @@ public class GameplayBootstrap : MonoBehaviour
             ArenaBuilder.EnsureEscapeVehicleExtractSetup(vehicle);
     }
 
-    static void EnsureRoundSessionSpawner()
-    {
-        if (Object.FindAnyObjectByType<RoundSessionSpawner>() != null)
-            return;
-        var go = new GameObject("RoundSessionSpawner");
-        go.AddComponent<RoundSessionSpawner>();
-    }
-
-    static void EnsureAlarmManagerSpawner()
-    {
-        if (Object.FindAnyObjectByType<AlarmManagerSpawner>() != null)
-            return;
-        var go = new GameObject("AlarmManagerSpawner");
-        go.AddComponent<AlarmManagerSpawner>();
-    }
-
-    static void EnsureAlarmManagerForLocalIfNeeded()
-    {
-        // Preferible: AlarmManager colocado en la escena Gameplay (editable).
-        if (GameSessionConfig.Mode != GamePlayMode.LocalSplitScreen)
-            return;
-
-        if (AlarmManager.Instance != null || Object.FindAnyObjectByType<AlarmManager>() != null)
-            return;
-
-        Debug.LogError(
-            "[Alarm] No hay AlarmManager en la escena. " +
-            "Crea un GameObject vacío 'AlarmManager' en Gameplay y añade el componente AlarmManager.");
-    }
-
     void StartLocal()
     {
         if (networkManager != null)
@@ -151,27 +85,30 @@ public class GameplayBootstrap : MonoBehaviour
         if (onlineArenaSpawner != null)
             onlineArenaSpawner.enabled = false;
 
-        EnsureAlarmManagerForLocalIfNeeded();
-
         if (localSession == null)
         {
             var go = new GameObject("LocalSplitScreenSession");
             localSession = go.AddComponent<LocalSplitScreenSession>();
         }
 
-        // El prefab se asigna en el Inspector si el session está en escena; si se crea en runtime, carga por path.
         localSession.enabled = true;
         localSession.BeginSession();
         cachedModeLabel = "LOCAL";
-        SpawnCelebrityForSession(networked: false);
-        // FishNet desactiva NetworkObjects de escena sin red; reactivar trampas/placas offline.
+
+        if (levelManager != null)
+            levelManager.InitializeLocal();
+        else
+            Debug.LogError("[GameplayBootstrap] Local sin LevelManager: no hay RoundSession/Alarm/Celebrity.");
+
+        // FishNet desactiva NetworkObjects de escena sin red; reactivar seguridad offline.
         StartCoroutine(ActivateSecuritySensorsOfflineNextFrame());
     }
 
     System.Collections.IEnumerator ActivateSecuritySensorsOfflineNextFrame()
     {
-        // Tras NetworkObject.Start (que hace SetActive false).
         yield return null;
+        if (levelManager != null)
+            levelManager.ActivateNetworkedChildrenForOffline();
         TrapController.ActivateAllForOfflinePlay();
         PressurePlateSensor.ActivateAllForOfflinePlay();
         AlarmManager.ActivateAllForOfflinePlay();
@@ -196,7 +133,10 @@ public class GameplayBootstrap : MonoBehaviour
         {
             Debug.Log($"Host iniciado en puerto {GameSessionConfig.DefaultPort}. {lanInfo}");
             Debug.Log("Clientes en el mismo PC: 127.0.0.1  ·  Clientes en LAN (portátil): usa la IP de arriba.");
-            SpawnCelebrityForSession(networked: true);
+            if (levelManager != null)
+                levelManager.InitializeHost();
+            else
+                Debug.LogError("[GameplayBootstrap] Host sin LevelManager.");
         }
         else
         {
@@ -218,6 +158,9 @@ public class GameplayBootstrap : MonoBehaviour
         cachedModeLabel =
             $"CLIENT → {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}";
 
+        if (levelManager != null)
+            levelManager.InitializeClient();
+
         bool started = networkManager.ClientManager.StartConnection(GameSessionConfig.JoinAddress, GameSessionConfig.DefaultPort);
         Debug.Log(started
             ? $"Cliente conectando a {GameSessionConfig.JoinAddress}:{GameSessionConfig.DefaultPort}..."
@@ -229,7 +172,6 @@ public class GameplayBootstrap : MonoBehaviour
         if (args.ConnectionState == LocalConnectionState.Started)
         {
             Debug.Log("Cliente conectado al host.");
-            // El famoso lo spawnea solo el server; aquí llega por réplica FishNet.
         }
         else if (args.ConnectionState == LocalConnectionState.Stopped)
             Debug.LogWarning("Cliente desconectado / no pudo conectar. Comprueba IP, puerto, firewall y que el host esté en marcha.");
@@ -281,4 +223,3 @@ public class GameplayBootstrap : MonoBehaviour
         GUI.Label(modeLabelRect, cachedModeLabel);
     }
 }
-

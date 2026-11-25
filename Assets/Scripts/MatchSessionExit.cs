@@ -11,24 +11,63 @@ public static class MatchSessionExit
 {
     const string MainMenuSceneName = "MainMenu";
     const string LobbySceneName = "Lobby";
-
-    /// <summary>
-    /// Tiempo para que el ObserversRpc de extract llegue a clients antes de cargar escenas (host).
-    /// </summary>
-    const float HostExtractNetworkFlushSeconds = 0.4f;
-    const int HostExtractFlushFrames = 3;
+    const float OnlineLobbyWaitTimeoutSeconds = 8f;
 
     static bool extractInProgress;
 
     public static bool IsExtractInProgress => extractInProgress;
 
+    /// <summary>
+    /// Offline: carga Lobby local.
+    /// Online server: LoadGlobalScenes (seguro también si se llama por error en host).
+    /// Online client: espera a que el server cargue Lobby.
+    /// </summary>
     public static void ExtractToLobby()
     {
         if (extractInProgress)
             return;
 
-        extractInProgress = true;
+        bool online = IsOnlineNetworkSession()
+                      && GameSessionConfig.Mode != GamePlayMode.LocalSplitScreen;
+        NetworkManager nm = InstanceFinder.NetworkManager;
+        if (online && nm != null && nm.IsServerStarted)
+        {
+            ServerLoadLobbyNow();
+            return;
+        }
 
+        extractInProgress = true;
+        RoundExtractButton.NotifyExtractStatus("Finalizando ronda...", sticky: true);
+        StartWaitRunner();
+    }
+
+    /// <summary>
+    /// Solo server: LoadGlobalScenes inmediato (no depende de corrutina ni de recibir ObserversRpc).
+    /// </summary>
+    public static void ServerLoadLobbyNow()
+    {
+        NetworkManager nm = InstanceFinder.NetworkManager;
+        if (nm == null || !nm.IsServerStarted)
+        {
+            Debug.LogError("[Extract] ServerLoadLobbyNow llamado sin server activo.");
+            return;
+        }
+
+        bool alreadyWaiting = extractInProgress;
+        extractInProgress = true;
+        RoundExtractButton.NotifyExtractStatus("Finalizando ronda...", sticky: true);
+        RoundObjectiveState.Clear();
+
+        Debug.Log("[Extract] ServerLoadLobbyNow → LoadGlobalScenes");
+        LoadLobbyAsGlobalSceneMovingPlayers();
+
+        // Waiter DDOL: limpia flag / permite reintento si falla.
+        if (!alreadyWaiting)
+            StartWaitRunner();
+    }
+
+    static void StartWaitRunner()
+    {
         var runnerGo = new GameObject("ExtractToLobbyRunner");
         Object.DontDestroyOnLoad(runnerGo);
         runnerGo.AddComponent<ExtractToLobbyRunner>().Begin();
@@ -163,7 +202,6 @@ public static class MatchSessionExit
 
             if (!online)
             {
-                // Local / offline: DDOL players + Unity LoadScene (sin red).
                 LobbyPlayerTransfer.PrepareBeforeLeaveGameplay();
                 yield return null;
                 StopAndDestroyNetworkManager();
@@ -174,30 +212,22 @@ public static class MatchSessionExit
                 yield break;
             }
 
-            // Online: mantener FishNet. Solo el server carga Lobby global;
-            // clientes reciben la escena por SceneManager.
-            NetworkManager networkManager = InstanceFinder.NetworkManager;
-            bool isServer = networkManager != null && networkManager.IsServerStarted;
-
-            if (isServer)
-            {
-                for (int i = 0; i < HostExtractFlushFrames; i++)
-                    yield return null;
-
-                yield return new WaitForSecondsRealtime(HostExtractNetworkFlushSeconds);
-                LoadLobbyAsGlobalSceneMovingPlayers();
-            }
-
-            float timeout = 15f;
+            // Online: solo espera Lobby (el load lo hace ServerLoadLobbyNow en el server).
             float elapsed = 0f;
-            while (!IsLobbySceneLoaded() && elapsed < timeout)
+            while (!IsLobbySceneLoaded() && elapsed < OnlineLobbyWaitTimeoutSeconds)
             {
                 elapsed += Time.unscaledDeltaTime;
                 yield return null;
             }
 
             if (!IsLobbySceneLoaded())
+            {
                 Debug.LogWarning("[Extract] Timeout esperando escena Lobby en red.");
+                NetworkRoundExtract.ClearExtractCommitIfPresent();
+                RoundExtractButton.NotifyExtractStatus(
+                    "Error al ir al Lobby. Inténtalo de nuevo.",
+                    sticky: false);
+            }
 
             extractInProgress = false;
             Destroy(gameObject);

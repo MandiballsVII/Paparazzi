@@ -102,25 +102,46 @@ public class NetworkRoundExtract : NetworkBehaviour
             return;
 
         extractCommitted = true;
+        RoundResultStore.SetExtractResult(victory);
+
+        Debug.Log(
+            $"[RoundExtract] CommitExtract victory={victory} " +
+            $"extractInProgress={MatchSessionExit.IsExtractInProgress} " +
+            $"isServer={IsServerInitialized}");
+
+        // Remotos: UI + espera Lobby. ExcludeServer: el host no debe entrar por ObserversRpc
+        // (el load lo hace el server de forma explícita justo después).
         BeginExtractObserversRpc(victory);
+
+        // Load inmediato en server (funciona igual si el commit viene de Interact o de ServerRpc).
+        MatchSessionExit.ServerLoadLobbyNow();
     }
 
-    [ObserversRpc]
+    [ObserversRpc(ExcludeServer = true)]
     void BeginExtractObserversRpc(bool victory)
     {
         extractCommitted = true;
         RoundResultStore.SetExtractResult(victory);
+        RoundExtractButton.NotifyExtractStatus("Finalizando ronda...", sticky: true);
         MatchSessionExit.ExtractToLobby();
     }
 
     [ObserversRpc]
     void ExtractFailedObserversRpc(string reason)
     {
-        RoundExtractButton button = FindAnyObjectByType<RoundExtractButton>();
-        if (button != null)
-            button.ShowFeedbackPublic(reason);
-        else
-            Debug.LogWarning($"[RoundExtract] {reason}");
+        RoundExtractButton.NotifyExtractStatus(reason, sticky: false);
+    }
+
+    /// <summary>Tras timeout de Lobby: permitir reintentar el botón de extract.</summary>
+    public void ClearExtractCommit()
+    {
+        extractCommitted = false;
+    }
+
+    public static void ClearExtractCommitIfPresent()
+    {
+        if (Instance != null)
+            Instance.ClearExtractCommit();
     }
 
     bool ValidateOccupancy(out string failReason, out bool victory)
