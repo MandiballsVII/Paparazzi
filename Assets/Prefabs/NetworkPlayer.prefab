@@ -1482,7 +1482,9 @@ GameObject:
   - component: {fileID: 6606205098076735006}
   - component: {fileID: 5519255930859113086}
   - component: {fileID: 7777404989258011188}
+  - component: {fileID: 8822441100112233441}
   - component: {fileID: 1528214745406039892}
+  - component: {fileID: 7744112200334455661}
   - component: {fileID: 5523623263787741957}
   - component: {fileID: 5495079830647312689}
   - component: {fileID: 8435118120548027417}
@@ -1674,6 +1676,28 @@ MonoBehaviour:
     X: 0
     Y: 0
     Z: 0
+--- !u!114 &8822441100112233441
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9006363252777286974}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27619b29442c5ab4abbb8d162f525afd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerMovement
+  walkSpeed: 3
+  sprintSpeed: 6
+  jumpHeight: 1.2
+  gravity: -50
+  mouseSensitivity: 0.12
+  stickSensitivity: 350
+  softPushAcceleration: 14
+  maxSoftPushSpeed: 3
+  playerSeparateSpeed: 3.5
+  cameraPivot: {fileID: 6182681072762561738}
 --- !u!114 &1528214745406039892
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1689,18 +1713,34 @@ MonoBehaviour:
   _componentIndexCache: 1
   _addedNetworkObject: {fileID: 5519255930859113086}
   _networkObjectCache: {fileID: 5519255930859113086}
-  walkSpeed: 5
-  sprintSpeed: 8
-  jumpHeight: 1.2
-  gravity: -20
-  mouseSensitivity: 0.12
-  stickSensitivity: 120
-  softPushAcceleration: 14
-  maxSoftPushSpeed: 3
-  playerSeparateSpeed: 3.5
   cameraPivot: {fileID: 6182681072762561738}
   playerCamera: {fileID: 4841945828787539668}
   faceIndicator: {fileID: 0}
+  softPushAcceleration: 14
+  maxSoftPushSpeed: 3
+--- !u!114 &7744112200334455661
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9006363252777286974}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9714b7860b21fd4cbe180bdfad2426a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerGrab
+  grabDistance: 3
+  holdDistance: 2.2
+  moveThrowThreshold: 0.75
+  throwSpeedFactor: 2.5
+  minThrowForce: 4
+  maxThrowForce: 18
+  maxGrabMass: 25
+  lookSearchIterations: 10
+  softPushAcceleration: 16
+  maxSoftPushSpeed: 3
+  holdNetworkSyncInterval: 0.05
 --- !u!114 &5523623263787741957
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1716,18 +1756,6 @@ MonoBehaviour:
   _componentIndexCache: 2
   _addedNetworkObject: {fileID: 5519255930859113086}
   _networkObjectCache: {fileID: 5519255930859113086}
-  grabDistance: 3
-  holdDistance: 2.2
-  moveThrowThreshold: 0.75
-  throwSpeedFactor: 2.5
-  minThrowForce: 4
-  maxThrowForce: 18
-  maxGrabMass: 25
-  lookSearchIterations: 10
-  softPushAcceleration: 16
-  maxSoftPushSpeed: 3
-  holdNetworkSyncInterval: 0.05
-  playerCamera: {fileID: 4841945828787539668}
 --- !u!114 &5495079830647312689
 MonoBehaviour:
   m_ObjectHideFlags: 0

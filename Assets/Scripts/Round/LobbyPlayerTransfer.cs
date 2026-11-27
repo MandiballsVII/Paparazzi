@@ -250,8 +250,13 @@ public static class LobbyPlayerTransfer
 
             if (!go.TryGetComponent(out PlayerGrab grab))
                 grab = go.AddComponent<PlayerGrab>();
-            if (grab != null && cam != null)
-                grab.Initialize(cam);
+            if (grab != null)
+            {
+                grab.ClearNetworkHandlers();
+                grab.GrabActive = true;
+                if (cam != null)
+                    grab.Initialize(cam);
+            }
 
             if (go.TryGetComponent(out PlayerPhotoCapture capture) && cam != null)
             {
@@ -387,6 +392,8 @@ public static class LobbyPlayerTransfer
         if (!go.TryGetComponent(out PlayerMovement movement))
             movement = go.AddComponent<PlayerMovement>();
 
+        movement.SoftPushHandler = null;
+        movement.MotorActive = true;
         movement.Initialize(pivot, cam);
         if (movement.enabled)
             movement.RebindActions();

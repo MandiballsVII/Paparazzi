@@ -5,37 +5,15 @@ using UnityEngine.InputSystem;
 using UnityEngine.Rendering.Universal;
 using FishNet.Component.Transforming;
 
+/// <summary>
+/// Capa de red del player: ownership, SyncVars, soft-push ServerRpc.
+/// El motor lo lleva <see cref="PlayerMovement"/> (mismo en local/Gym/online).
+/// </summary>
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(PlayerInput))]
+[RequireComponent(typeof(PlayerMovement))]
 public class NetworkPlayerController : NetworkBehaviour
 {
-    [SerializeField]
-    float walkSpeed = 5f;
-
-    [SerializeField]
-    float sprintSpeed = 8f;
-
-    [SerializeField]
-    float jumpHeight = 1.2f;
-
-    [SerializeField]
-    float gravity = -20f;
-
-    [SerializeField]
-    float mouseSensitivity = 0.12f;
-
-    [SerializeField]
-    float stickSensitivity = 120f;
-
-    [SerializeField]
-    float softPushAcceleration = 14f;
-
-    [SerializeField]
-    float maxSoftPushSpeed = 3f;
-
-    [SerializeField]
-    float playerSeparateSpeed = 3.5f;
-
     [SerializeField]
     Transform cameraPivot;
 
@@ -45,29 +23,23 @@ public class NetworkPlayerController : NetworkBehaviour
     [SerializeField]
     Transform faceIndicator;
 
+    [SerializeField]
+    float softPushAcceleration = 14f;
+
+    [SerializeField]
+    float maxSoftPushSpeed = 3f;
+
     readonly SyncVar<int> colorIndex = new();
     readonly SyncVar<bool> isCrouching = new();
 
     CharacterController controller;
     PlayerInput playerInput;
+    PlayerMovement movement;
     PlayerPauseMenu pauseMenu;
     PlayerStance stance;
     PlayerHealth health;
-    NetworkPlayerGrab grab;
-    InputAction moveAction;
-    InputAction lookAction;
-    InputAction jumpAction;
-    InputAction sprintAction;
-    InputAction crouchAction;
-    InputAction crouchToggleAction;
-
-    Vector3 velocity;
-    float yaw;
-    float pitch;
-    bool jumpQueued;
-    bool inputBound;
-    bool crouchToggleLatched;
     bool offlineLocalControl;
+    bool crouchHooked;
 
     public Camera PlayerCamera => playerCamera;
     public bool HasLocalControl => offlineLocalControl || (IsSpawned && IsOwner);
@@ -76,12 +48,12 @@ public class NetworkPlayerController : NetworkBehaviour
     {
         controller = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
+        EnsureMovement();
         EnsurePhotoSystems();
         EnsureHealthSystems();
         EnsurePerceptionEmitters();
         TryGetComponent(out pauseMenu);
         TryGetComponent(out health);
-        TryGetComponent(out grab);
         AlignCapsuleWithMesh();
         EnsureFaceIndicator();
         EnsureStance();
@@ -110,6 +82,16 @@ public class NetworkPlayerController : NetworkBehaviour
 
         if (playerInput != null)
             playerInput.enabled = false;
+
+        // Hasta OnStartClient / offline: el motor no debe conducir.
+        if (movement != null)
+            movement.MotorActive = false;
+    }
+
+    void EnsureMovement()
+    {
+        if (!TryGetComponent(out movement))
+            movement = gameObject.AddComponent<PlayerMovement>();
     }
 
     void AlignCapsuleWithMesh()
@@ -141,7 +123,6 @@ public class NetworkPlayerController : NetworkBehaviour
             Destroy(faceCollider);
 
         face.transform.SetParent(transform, false);
-        // Marcador de orientación a la altura de los pies (no tapa la cámara).
         face.transform.localPosition = ArenaBuilder.FacingMarkerLocalPosition;
         face.transform.localScale = new Vector3(0.35f, 0.22f, 0.12f);
         faceIndicator = face.transform;
@@ -176,6 +157,7 @@ public class NetworkPlayerController : NetworkBehaviour
         base.OnStopNetwork();
         colorIndex.OnChange -= OnColorIndexChanged;
         isCrouching.OnChange -= OnCrouchingChanged;
+        UnhookMovement();
     }
 
     public override void OnStartServer()
@@ -200,6 +182,12 @@ public class NetworkPlayerController : NetworkBehaviour
         {
             if (controller != null)
                 controller.enabled = false;
+
+            if (movement != null)
+            {
+                movement.MotorActive = false;
+                movement.enabled = false;
+            }
 
             if (playerCamera != null)
             {
@@ -239,6 +227,9 @@ public class NetworkPlayerController : NetworkBehaviour
         if (!TryGetComponent(out PlayerGrab localGrab))
             localGrab = gameObject.AddComponent<PlayerGrab>();
 
+        localGrab.ClearNetworkHandlers();
+        localGrab.GrabActive = true;
+
         if (controller != null)
             controller.enabled = true;
 
@@ -260,7 +251,7 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void EnableOwnerControls()
     {
-        yaw = transform.eulerAngles.y;
+        EnsureMovement();
 
         if (playerCamera != null)
         {
@@ -285,20 +276,26 @@ public class NetworkPlayerController : NetworkBehaviour
             if (!offlineLocalControl)
                 playerInput.neverAutoSwitchControlSchemes = false;
             playerInput.enabled = true;
-            BindInput();
+        }
+
+        if (movement != null)
+        {
+            movement.enabled = true;
+            movement.Initialize(cameraPivot, playerCamera);
+            movement.SoftPushHandler = HandleSoftPushFromMotor;
+            HookMovementCrouch();
+            movement.MotorActive = true;
         }
 
         if (TryGetComponent(out PlayerPhotoCapture capture))
         {
             capture.Initialize(playerCamera);
-            // Tras EnsurePrivateActionAsset hay que reenganchar Photo al asset clonado.
             capture.RebindActionsForPrivateAsset();
         }
 
         if (pauseMenu != null)
         {
             pauseMenu.Initialize(playerCamera);
-            // Tras EnsurePrivateActionAsset hay que reenganchar al asset clonado.
             pauseMenu.RebindActionsForPrivateAsset();
         }
 
@@ -336,6 +333,53 @@ public class NetworkPlayerController : NetworkBehaviour
         Cursor.visible = false;
     }
 
+    void HookMovementCrouch()
+    {
+        if (movement == null || crouchHooked)
+            return;
+
+        movement.CrouchChanged += OnMotorCrouchChanged;
+        crouchHooked = true;
+    }
+
+    void UnhookMovement()
+    {
+        if (movement != null && crouchHooked)
+        {
+            movement.CrouchChanged -= OnMotorCrouchChanged;
+            movement.SoftPushHandler = null;
+            movement.MotorActive = false;
+        }
+
+        crouchHooked = false;
+    }
+
+    void OnMotorCrouchChanged(bool crouching)
+    {
+        if (offlineLocalControl || !IsSpawned || !IsOwner)
+            return;
+
+        if (isCrouching.Value != crouching)
+            SetCrouchingServerRpc(crouching);
+    }
+
+    void HandleSoftPushFromMotor(Rigidbody body, Vector3 point)
+    {
+        if (body == null || body.isKinematic)
+            return;
+
+        if (offlineLocalControl || !IsSpawned)
+        {
+            PlayerSoftPush.SoftPushDynamicBody(body, point, softPushAcceleration, maxSoftPushSpeed);
+            return;
+        }
+
+        if (!body.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
+            return;
+
+        SoftPushObjectServerRpc(nob, point);
+    }
+
     void EnsurePhotoSystems()
     {
         if (!TryGetComponent(out PlayerPhotoAlbum _))
@@ -347,7 +391,6 @@ public class NetworkPlayerController : NetworkBehaviour
         if (!TryGetComponent(out PlayerPauseMenu menu))
             menu = gameObject.AddComponent<PlayerPauseMenu>();
 
-        // PhotoEconomyReporter es NetworkBehaviour: debe ir en el prefab (no AddComponent en runtime).
         if (!TryGetComponent(out PhotoEconomyReporter _))
             Debug.LogError("[NetworkPlayer] Falta PhotoEconomyReporter en el prefab NetworkPlayer.");
 
@@ -356,7 +399,6 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void EnsureHealthSystems()
     {
-        // Preferible todo en el prefab NetworkPlayer (evitar AddComponent de NetworkBehaviours).
         if (!TryGetComponent(out health))
         {
             Debug.LogError("[NetworkPlayer] Falta PlayerHealth en el prefab.");
@@ -375,186 +417,6 @@ public class NetworkPlayerController : NetworkBehaviour
             Debug.LogError(
                 "[NetworkPlayer] Falta PlayerHealthHud en el prefab. " +
                 "Tools → Paparazzi → Setup NetworkPlayer Health HUD.");
-    }
-
-    void BindInput()
-    {
-        if (inputBound || playerInput == null || playerInput.actions == null)
-            return;
-
-        moveAction = playerInput.actions["Move"];
-        lookAction = playerInput.actions["Look"];
-        jumpAction = playerInput.actions["Jump"];
-        sprintAction = playerInput.actions["Sprint"];
-        crouchAction = playerInput.actions["Crouch"];
-        crouchToggleAction = playerInput.actions.FindAction("CrouchToggle", false);
-        jumpAction.performed += OnJump;
-        inputBound = true;
-    }
-
-    void UnbindInput()
-    {
-        if (!inputBound || jumpAction == null)
-            return;
-
-        jumpAction.performed -= OnJump;
-        inputBound = false;
-    }
-
-    void OnJump(InputAction.CallbackContext context)
-    {
-        if (!HasLocalControl)
-            return;
-
-        jumpQueued = true;
-    }
-
-    void Update()
-    {
-        if (!HasLocalControl)
-            return;
-
-        if (health == null)
-            TryGetComponent(out health);
-        if (health != null && health.IsDead)
-        {
-            crouchToggleLatched = false;
-            return;
-        }
-
-        if (pauseMenu != null && pauseMenu.IsOpen)
-            return;
-
-        UpdateCrouch();
-        Look();
-        Move();
-        SeparateFromPlayers();
-    }
-
-    void UpdateCrouch()
-    {
-        if (stance == null)
-            return;
-
-        if (crouchToggleAction != null && crouchToggleAction.WasPressedThisFrame())
-            crouchToggleLatched = !crouchToggleLatched;
-
-        bool holdCrouch = crouchAction != null && crouchAction.IsPressed();
-        bool wantCrouch = holdCrouch || crouchToggleLatched;
-
-        if (offlineLocalControl)
-        {
-            if (wantCrouch == stance.IsCrouching)
-                return;
-
-            bool beforeOffline = stance.IsCrouching;
-            stance.SetCrouching(wantCrouch);
-            if (!wantCrouch && stance.IsCrouching && beforeOffline)
-                crouchToggleLatched = true;
-            return;
-        }
-
-        if (wantCrouch == stance.IsCrouching && wantCrouch == isCrouching.Value)
-            return;
-
-        bool before = stance.IsCrouching;
-        stance.SetCrouching(wantCrouch);
-        // Si no puede levantarse (techo), no mandamos el SyncVar y mantenemos latch.
-        if (stance.IsCrouching == before && wantCrouch != before)
-        {
-            if (!wantCrouch && stance.IsCrouching)
-                crouchToggleLatched = true;
-            return;
-        }
-
-        if (stance.IsCrouching != isCrouching.Value)
-            SetCrouchingServerRpc(stance.IsCrouching);
-    }
-
-    void Look()
-    {
-        if (cameraPivot == null || lookAction == null)
-            return;
-
-        Vector2 look = lookAction.ReadValue<Vector2>();
-        bool usingMouse =
-            playerInput.currentControlScheme == "Keyboard&Mouse"
-            || playerInput.currentControlScheme == null;
-        float scale = usingMouse ? mouseSensitivity : stickSensitivity * Time.deltaTime;
-
-        float previousYaw = yaw;
-        float previousPitch = pitch;
-        yaw += look.x * scale;
-        pitch -= look.y * scale;
-        pitch = Mathf.Clamp(pitch, -85f, 85f);
-
-        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-        cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-
-        if (grab == null)
-            TryGetComponent(out grab);
-        if (grab != null && grab.IsHolding)
-            grab.ConstrainLook(ref yaw, ref pitch, previousYaw, previousPitch, transform, cameraPivot);
-    }
-
-    void SeparateFromPlayers()
-    {
-        float probe = controller.radius + 0.35f;
-        PlayerSoftPush.SeparateFromNearbyPlayers(controller, probe, playerSeparateSpeed, Time.deltaTime);
-    }
-
-    void Move()
-    {
-        if (moveAction == null || sprintAction == null)
-            return;
-
-        bool grounded = controller.isGrounded;
-        if (grounded && velocity.y < 0f)
-            velocity.y = -2f;
-
-        Vector2 input = moveAction.ReadValue<Vector2>();
-        Vector3 wish = transform.right * input.x + transform.forward * input.y;
-        if (wish.sqrMagnitude > 1f)
-            wish.Normalize();
-
-        bool crouching = stance != null && stance.IsCrouching;
-        float speed = (!crouching && sprintAction.IsPressed()) ? sprintSpeed : walkSpeed;
-        if (stance != null)
-            speed *= stance.MoveMultiplier;
-
-        controller.Move(wish * speed * Time.deltaTime);
-
-        if (jumpQueued && grounded && !crouching)
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-
-        jumpQueued = false;
-        velocity.y += gravity * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
-    }
-
-    void OnControllerColliderHit(ControllerColliderHit hit)
-    {
-        if (!HasLocalControl)
-            return;
-
-        Rigidbody body = hit.rigidbody;
-        if (body == null || body.isKinematic)
-            return;
-
-        if (offlineLocalControl || !IsSpawned)
-        {
-            PlayerSoftPush.SoftPushDynamicBody(
-                body,
-                hit.point,
-                softPushAcceleration,
-                maxSoftPushSpeed);
-            return;
-        }
-
-        if (!body.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
-            return;
-
-        SoftPushObjectServerRpc(nob, hit.point);
     }
 
     [ServerRpc]
@@ -577,7 +439,6 @@ public class NetworkPlayerController : NetworkBehaviour
         if (stance == null)
             TryGetComponent(out stance);
 
-        // ignoreCeiling: la autoridad del techo la tiene el owner al enviar el Rpc.
         if (stance != null)
             stance.SetCrouching(next, ignoreCeiling: true);
     }
@@ -595,6 +456,6 @@ public class NetworkPlayerController : NetworkBehaviour
 
     void OnDisable()
     {
-        UnbindInput();
+        UnhookMovement();
     }
 }

@@ -1,272 +1,156 @@
-using System.Collections.Generic;
 using FishNet.Connection;
 using FishNet.Object;
 using FishNet.Object.Synchronizing;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// Capa de red del agarre. La mecánica vive en <see cref="PlayerGrab"/>.
+/// </summary>
 [RequireComponent(typeof(PlayerInput))]
+[RequireComponent(typeof(PlayerGrab))]
 public class NetworkPlayerGrab : NetworkBehaviour
 {
-    [SerializeField]
-    float grabDistance = 3f;
-
-    [SerializeField]
-    float holdDistance = 1.8f;
-
-    [SerializeField]
-    float moveThrowThreshold = 0.75f;
-
-    [SerializeField]
-    float throwSpeedFactor = 2.5f;
-
-    [SerializeField]
-    float minThrowForce = 4f;
-
-    [SerializeField]
-    float maxThrowForce = 18f;
-
-    [SerializeField]
-    float maxGrabMass = 25f;
-
-    [Header("Hold Collision")]
-    [SerializeField]
-    int lookSearchIterations = 10;
-
-    [SerializeField]
-    float softPushAcceleration = 16f;
-
-    [SerializeField]
-    float maxSoftPushSpeed = 3f;
-
-    [SerializeField]
-    [Tooltip("No saturar la red con ServerRpc de hold cada frame.")]
-    float holdNetworkSyncInterval = 0.05f;
-
-    [SerializeField]
-    Camera playerCamera;
-
     readonly SyncVar<bool> isHolding = new();
     readonly SyncVar<NetworkObject> heldSync = new();
 
-    PlayerInput playerInput;
-    PlayerPauseMenu pauseMenu;
-    PlayerHealth health;
-    CharacterController controller;
-    InputAction grabAction;
-    bool inputBound;
-
+    PlayerGrab grab;
     NetworkObject heldObject;
-    Collider heldCollider;
     bool wasKinematic;
     bool usedGravity;
-    readonly List<Collider> ignoredColliders = new();
-    static readonly Collider[] softPushBuffer = new Collider[16];
-    float nextIgnoreRefreshTime;
-    float nextHoldNetworkSyncTime;
+    bool hooksWired;
 
     public bool IsHolding => isHolding.Value;
 
     void Awake()
     {
-        playerInput = GetComponent<PlayerInput>();
-        TryGetComponent(out controller);
-        TryGetComponent(out pauseMenu);
-        TryGetComponent(out health);
+        EnsureGrab();
+        // Hasta OnStartClient owner: sin input de agarre.
+        grab.GrabActive = false;
+        grab.ClearNetworkHandlers();
 
-        if (playerCamera == null)
-        {
-            Transform pivot = transform.Find("CameraPivot");
-            if (pivot != null)
-                playerCamera = pivot.GetComponentInChildren<Camera>(true);
-        }
+        isHolding.OnChange += OnIsHoldingChanged;
+        heldSync.OnChange += OnHeldSyncChanged;
+    }
+
+    void OnDestroy()
+    {
+        isHolding.OnChange -= OnIsHoldingChanged;
+        heldSync.OnChange -= OnHeldSyncChanged;
+    }
+
+    void EnsureGrab()
+    {
+        if (!TryGetComponent(out grab))
+            grab = gameObject.AddComponent<PlayerGrab>();
     }
 
     public override void OnStartClient()
     {
         base.OnStartClient();
         if (IsOwner)
-            BindInput();
+            WireOwnerHooks();
+        else
+        {
+            grab.GrabActive = false;
+            grab.ClearNetworkHandlers();
+        }
+
+        SyncLocalHoldFromVars();
     }
 
     public override void OnStopClient()
     {
         base.OnStopClient();
-        UnbindInput();
-        ClearIgnoredCollisions();
+        UnwireOwnerHooks();
+        grab.ReleaseHold(Vector3.zero, restorePhysics: false);
         if (IsServerInitialized)
             ForceDrop(Vector3.zero);
     }
 
-    void BindInput()
+    void WireOwnerHooks()
     {
-        if (inputBound || playerInput == null || playerInput.actions == null)
+        if (hooksWired || grab == null)
             return;
 
-        grabAction = playerInput.actions["Interact"];
-        grabAction.performed += OnGrabPressed;
-        inputBound = true;
+        grab.NetworkGrabHandler = TryNetworkGrab;
+        grab.NetworkDropHandler = impulse => DropServerRpc(impulse);
+        grab.NetworkHoldSyncHandler = (pos, rot) => UpdateHoldServerRpc(pos, rot);
+        grab.SoftPushDynamicHandler = SoftPushDynamicFromMotor;
+        grab.GrabActive = true;
+        hooksWired = true;
     }
 
-    void UnbindInput()
+    void UnwireOwnerHooks()
     {
-        if (!inputBound)
+        if (!hooksWired || grab == null)
             return;
 
-        if (grabAction != null)
-            grabAction.performed -= OnGrabPressed;
-        inputBound = false;
+        grab.ClearNetworkHandlers();
+        grab.GrabActive = false;
+        hooksWired = false;
     }
 
-    void OnGrabPressed(InputAction.CallbackContext context)
+    bool TryNetworkGrab(RaycastHit hit)
     {
-        if (!IsOwner)
-            return;
-
-        if (pauseMenu != null && pauseMenu.IsOpen)
-            return;
-
-        if (health == null)
-            TryGetComponent(out health);
-        if (health != null && health.IsDead)
-            return;
-
-        if (isHolding.Value)
-        {
-            DropServerRpc(CalculateReleaseImpulse());
-            return;
-        }
-
-        if (playerCamera == null)
-            return;
-
-        if (PlayerInteractUtility.TryGetInteractable(playerCamera, grabDistance, out IPlayerInteractable interactable, out _)
-            && interactable.CanInteract(gameObject))
-        {
-            interactable.Interact(gameObject);
-            return;
-        }
-
-        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
-        if (!Physics.Raycast(ray, out RaycastHit hit, grabDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
-            return;
-
-        if (!hit.rigidbody)
-            return;
+        if (hit.rigidbody == null)
+            return true;
 
         bool isDeadPlayer = hit.rigidbody.TryGetComponent(out PlayerHealth targetHealth) && targetHealth.IsDead;
-        if (!isDeadPlayer && hit.rigidbody.mass > maxGrabMass)
-            return;
+        if (!isDeadPlayer && hit.rigidbody.mass > grab.MaxGrabMass)
+            return true;
 
         if (!hit.rigidbody.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
-            return;
+            return true;
 
         if (nob == NetworkObject)
-            return;
+            return true;
 
         GrabServerRpc(nob);
+        return true;
     }
 
-    Vector3 CalculateReleaseImpulse()
+    void SoftPushDynamicFromMotor(Rigidbody body, Vector3 fromPoint)
     {
-        if (controller == null || playerCamera == null)
-            return Vector3.zero;
+        if (body == null || body.isKinematic)
+            return;
+        if (!body.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
+            return;
 
-        Vector3 planar = controller.velocity;
-        planar.y = 0f;
-        float speed = planar.magnitude;
-
-        if (speed < moveThrowThreshold)
-            return Vector3.zero;
-
-        float strength = Mathf.Clamp(speed * throwSpeedFactor, minThrowForce, maxThrowForce);
-        return playerCamera.transform.forward * strength;
+        SoftPushDynamicServerRpc(nob, fromPoint);
     }
 
-    public void ConstrainLook(
-        ref float yaw,
-        ref float pitch,
-        float previousYaw,
-        float previousPitch,
-        Transform body,
-        Transform cameraPivot)
+    void OnIsHoldingChanged(bool prev, bool next, bool asServer)
     {
-        if (!IsHolding || playerCamera == null || body == null || cameraPivot == null)
+        if (asServer)
+            return;
+        SyncLocalHoldFromVars();
+    }
+
+    void OnHeldSyncChanged(NetworkObject prev, NetworkObject next, bool asServer)
+    {
+        if (asServer)
+            return;
+        SyncLocalHoldFromVars();
+    }
+
+    void SyncLocalHoldFromVars()
+    {
+        if (grab == null)
             return;
 
-        if (!TryGetHeldRoot(out Transform heldRoot))
-            return;
-
-        if (heldCollider == null)
-            heldRoot.TryGetComponent(out heldCollider);
-        if (heldCollider == null)
-            return;
-
-        if (Mathf.Abs(Mathf.DeltaAngle(previousYaw, yaw)) < 0.0001f
-            && Mathf.Abs(pitch - previousPitch) < 0.0001f)
-            return;
-
-        ApplyLook(body, cameraPivot, yaw, pitch);
-        if (!IsCurrentHoldBlocked(heldRoot))
-            return;
-
-        float lowYaw = previousYaw;
-        float lowPitch = previousPitch;
-        float highYaw = yaw;
-        float highPitch = pitch;
-
-        for (int i = 0; i < lookSearchIterations; i++)
+        if (!isHolding.Value || heldSync.Value == null)
         {
-            float midYaw = Mathf.LerpAngle(lowYaw, highYaw, 0.5f);
-            float midPitch = Mathf.Lerp(lowPitch, highPitch, 0.5f);
-            ApplyLook(body, cameraPivot, midYaw, midPitch);
-
-            if (IsCurrentHoldBlocked(heldRoot))
-            {
-                highYaw = midYaw;
-                highPitch = midPitch;
-            }
-            else
-            {
-                lowYaw = midYaw;
-                lowPitch = midPitch;
-            }
+            if (grab.IsHolding)
+                grab.ReleaseHold(Vector3.zero, restorePhysics: false);
+            return;
         }
 
-        yaw = lowYaw;
-        pitch = lowPitch;
-        ApplyLook(body, cameraPivot, yaw, pitch);
-    }
+        if (!heldSync.Value.TryGetComponent(out Rigidbody body))
+            return;
 
-    static void ApplyLook(Transform body, Transform cameraPivot, float yaw, float pitch)
-    {
-        body.rotation = Quaternion.Euler(0f, yaw, 0f);
-        cameraPivot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
-    }
-
-    bool IsCurrentHoldBlocked(Transform heldRoot)
-    {
-        if (playerCamera == null || heldCollider == null || heldRoot == null)
-            return false;
-
-        Transform cam = playerCamera.transform;
-        Vector3 holdPoint = cam.position + cam.forward * holdDistance;
-        return HeldObjectHoldQuery.IsPoseBlocked(
-            heldCollider,
-            heldRoot,
-            transform,
-            holdPoint,
-            cam.rotation);
-    }
-
-    bool TryGetHeldRoot(out Transform heldRoot)
-    {
-        heldRoot = null;
-        if (heldSync.Value != null)
-            heldRoot = heldSync.Value.transform;
-        else if (heldObject != null)
-            heldRoot = heldObject.transform;
-        return heldRoot != null;
+        heldSync.Value.TryGetComponent(out Collider col);
+        grab.AttachHold(body, col, configurePhysics: false);
     }
 
     [ServerRpc]
@@ -279,7 +163,7 @@ public class NetworkPlayerGrab : NetworkBehaviour
             return;
 
         bool isDeadPlayer = target.TryGetComponent(out PlayerHealth targetHealth) && targetHealth.IsDead;
-        if (!isDeadPlayer && body.mass > maxGrabMass)
+        if (!isDeadPlayer && body.mass > grab.MaxGrabMass)
             return;
 
         if (heldObject != null)
@@ -295,12 +179,13 @@ public class NetworkPlayerGrab : NetworkBehaviour
         body.useGravity = false;
         body.isKinematic = true;
 
-        body.TryGetComponent(out heldCollider);
-        RefreshIgnoredCollisions();
         isHolding.Value = true;
 
-        if (TryGetHoldPose(out Vector3 pos, out Quaternion rot))
-            ApplyHoldPose(body, pos, rot);
+        if (IsOwner && grab != null)
+        {
+            target.TryGetComponent(out Collider col);
+            grab.AttachHold(body, col, configurePhysics: false);
+        }
     }
 
     [ServerRpc]
@@ -315,7 +200,9 @@ public class NetworkPlayerGrab : NetworkBehaviour
         if (heldObject == null || !heldObject.TryGetComponent(out Rigidbody body))
             return;
 
-        ApplyHoldPose(body, position, rotation);
+        body.MovePosition(position);
+        body.MoveRotation(rotation);
+        body.transform.SetPositionAndRotation(position, rotation);
     }
 
     [ServerRpc]
@@ -324,13 +211,15 @@ public class NetworkPlayerGrab : NetworkBehaviour
         if (target == null || !target.TryGetComponent(out Rigidbody body) || body.isKinematic)
             return;
 
-        PlayerSoftPush.SoftPushDynamicBody(body, fromPoint, softPushAcceleration, maxSoftPushSpeed);
+        PlayerSoftPush.SoftPushDynamicBody(
+            body,
+            fromPoint,
+            grab != null ? grab.SoftPushAcceleration : 16f,
+            grab != null ? grab.MaxSoftPushSpeed : 3f);
     }
 
     void ForceDrop(Vector3 impulse)
     {
-        ClearIgnoredCollisions();
-
         if (heldObject != null && heldObject.TryGetComponent(out Rigidbody body))
         {
             bool revivedPlayer = heldObject.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead;
@@ -354,258 +243,13 @@ public class NetworkPlayerGrab : NetworkBehaviour
         }
 
         heldObject = null;
-        heldCollider = null;
         if (IsServerInitialized)
         {
             heldSync.Value = default;
             isHolding.Value = false;
         }
-    }
 
-    void LateUpdate()
-    {
-        if (IsOwner && !isHolding.Value && ignoredColliders.Count > 0)
-            ClearIgnoredCollisions();
-
-        if (!IsOwner || !isHolding.Value)
-            return;
-
-        if (pauseMenu != null && pauseMenu.IsOpen)
-            return;
-
-        NetworkObject held = heldSync.Value;
-        if (held != null && held.TryGetComponent(out PlayerHealth heldHealth) && !heldHealth.IsDead)
-        {
-            DropServerRpc(Vector3.zero);
-            return;
-        }
-
-        if (heldCollider == null && held != null)
-            held.TryGetComponent(out heldCollider);
-
-        if (Time.time >= nextIgnoreRefreshTime)
-            RefreshIgnoredCollisions();
-
-        if (!TryGetHoldPose(out Vector3 desired, out Quaternion rot))
-            return;
-
-        if (!TryGetHeldRoot(out Transform heldRoot))
-            return;
-
-        if (heldCollider == null)
-            heldRoot.TryGetComponent(out heldCollider);
-
-        Vector3 pos = desired;
-        if (heldCollider != null)
-        {
-            pos = HeldObjectHoldQuery.ResolvePose(
-                heldCollider,
-                heldRoot,
-                transform,
-                desired,
-                rot,
-                out Vector3 correction);
-
-            if (controller != null && correction.sqrMagnitude > 0.0001f)
-            {
-                Vector3 planar = new Vector3(correction.x, 0f, correction.z);
-                if (planar.sqrMagnitude > 0.0001f)
-                    controller.Move(planar);
-            }
-        }
-
-        // Pose local cada frame; red a intervalo fijo para no ahogar NetworkTransform del player.
-        ApplyHoldLocally(pos, rot);
-        if (Time.time >= nextHoldNetworkSyncTime)
-        {
-            nextHoldNetworkSyncTime = Time.time + holdNetworkSyncInterval;
-            UpdateHoldServerRpc(pos, rot);
-        }
-
-        float radius = HeldObjectHoldQuery.EstimateRadius(heldCollider);
-        SoftPushDynamicsAround(pos, radius);
-        SoftPushOtherPlayers(pos, radius);
-    }
-
-    void SoftPushOtherPlayers(Vector3 holdPos, float objectRadius)
-    {
-        int count = Physics.OverlapSphereNonAlloc(
-            holdPos,
-            objectRadius + 0.08f,
-            softPushBuffer,
-            Physics.DefaultRaycastLayers,
-            QueryTriggerInteraction.Ignore);
-
-        float step = 4f * Time.deltaTime;
-        for (int i = 0; i < count; i++)
-        {
-            Collider col = softPushBuffer[i];
-            if (col == null)
-                continue;
-
-            CharacterController other = col as CharacterController;
-            if (other == null)
-                other = col.GetComponentInParent<CharacterController>();
-            if (other == null || other == controller)
-                continue;
-
-            Vector3 away = other.transform.position - holdPos;
-            away.y = 0f;
-            if (away.sqrMagnitude < 0.0001f)
-                away = transform.forward;
-            away.Normalize();
-            other.Move(away * step);
-        }
-    }
-
-    void SoftPushDynamicsAround(Vector3 holdPos, float radius)
-    {
-        int count = Physics.OverlapSphereNonAlloc(
-            holdPos,
-            radius + 0.05f,
-            softPushBuffer,
-            Physics.DefaultRaycastLayers,
-            QueryTriggerInteraction.Ignore);
-
-        for (int i = 0; i < count; i++)
-        {
-            Collider col = softPushBuffer[i];
-            if (col == null || col == heldCollider)
-                continue;
-
-            Rigidbody rb = col.attachedRigidbody;
-            if (rb == null || rb.isKinematic)
-                continue;
-            if (rb.GetComponentInParent<CharacterController>() != null)
-                continue;
-            if (!rb.TryGetComponent(out NetworkObject nob) || !nob.IsSpawned)
-                continue;
-
-            SoftPushDynamicServerRpc(nob, holdPos);
-        }
-    }
-
-    void ApplyHoldLocally(Vector3 position, Quaternion rotation)
-    {
-        NetworkObject target = heldSync.Value;
-        if (target == null || !target.TryGetComponent(out Rigidbody body))
-            return;
-
-        ApplyHoldPose(body, position, rotation);
-    }
-
-    static void ApplyHoldPose(Rigidbody body, Vector3 position, Quaternion rotation)
-    {
-        body.MovePosition(position);
-        body.MoveRotation(rotation);
-        body.transform.SetPositionAndRotation(position, rotation);
-    }
-
-    bool TryGetHoldPose(out Vector3 position, out Quaternion rotation)
-    {
-        position = default;
-        rotation = default;
-
-        if (playerCamera == null)
-            return false;
-
-        if (!IsOwner && IsServerInitialized)
-        {
-            position = transform.position + Vector3.up * 0.6f + transform.forward * holdDistance;
-            rotation = transform.rotation;
-            return true;
-        }
-
-        Transform cam = playerCamera.transform;
-        position = cam.position + cam.forward * holdDistance;
-        rotation = cam.rotation;
-        return true;
-    }
-
-    void RefreshIgnoredCollisions()
-    {
-        nextIgnoreRefreshTime = Time.time + 0.5f;
-        if (heldCollider == null && heldSync.Value != null)
-            heldSync.Value.TryGetComponent(out heldCollider);
-        if (heldCollider == null && heldObject != null)
-            heldObject.TryGetComponent(out heldCollider);
-        if (heldCollider == null)
-            return;
-
-        ClearIgnoredCollisions();
-
-        if (controller != null)
-        {
-            Physics.IgnoreCollision(controller, heldCollider, true);
-            ignoredColliders.Add(controller);
-        }
-
-        CharacterController[] controllers = Object.FindObjectsByType<CharacterController>(FindObjectsSortMode.None);
-        for (int i = 0; i < controllers.Length; i++)
-        {
-            CharacterController cc = controllers[i];
-            if (cc == null || cc == controller)
-                continue;
-            Physics.IgnoreCollision(cc, heldCollider, true);
-            ignoredColliders.Add(cc);
-        }
-
-        Rigidbody heldRb = null;
-        if (heldObject != null)
-            heldObject.TryGetComponent(out heldRb);
-        else if (heldSync.Value != null)
-            heldSync.Value.TryGetComponent(out heldRb);
-
-        Rigidbody[] bodies = Object.FindObjectsByType<Rigidbody>(FindObjectsSortMode.None);
-        for (int i = 0; i < bodies.Length; i++)
-        {
-            Rigidbody rb = bodies[i];
-            if (rb == null || rb == heldRb || rb.isKinematic)
-                continue;
-            if (rb.GetComponentInParent<CharacterController>() != null)
-                continue;
-
-            Collider[] cols = rb.GetComponentsInChildren<Collider>();
-            for (int c = 0; c < cols.Length; c++)
-            {
-                if (cols[c] == null || cols[c].isTrigger)
-                    continue;
-                Physics.IgnoreCollision(heldCollider, cols[c], true);
-                ignoredColliders.Add(cols[c]);
-            }
-        }
-    }
-
-    void ClearIgnoredCollisions()
-    {
-        if (heldCollider != null)
-        {
-            for (int i = 0; i < ignoredColliders.Count; i++)
-            {
-                Collider col = ignoredColliders[i];
-                if (col != null)
-                    Physics.IgnoreCollision(heldCollider, col, false);
-            }
-        }
-
-        ignoredColliders.Clear();
-    }
-
-    void OnGUI()
-    {
-        if (!IsOwner || playerCamera == null)
-            return;
-
-        Rect pixel = playerCamera.pixelRect;
-        float x = pixel.x + pixel.width * 0.5f;
-        float y = Screen.height - (pixel.y + pixel.height * 0.5f);
-        GUI.color = isHolding.Value ? Color.yellow : Color.white;
-        GUI.Box(new Rect(x - 3f, y - 3f, 6f, 6f), GUIContent.none);
-    }
-
-    void OnDisable()
-    {
-        UnbindInput();
-        ClearIgnoredCollisions();
+        if (grab != null && grab.IsHolding)
+            grab.ReleaseHold(Vector3.zero, restorePhysics: false);
     }
 }

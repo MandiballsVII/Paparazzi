@@ -161,18 +161,27 @@ public static class CoopPrototypeSetup
         NetworkTransform nt = player.AddComponent<NetworkTransform>();
         ConfigureNetworkTransform(nt, clientAuthoritative: true, NetworkTransform.ComponentConfigurationType.CharacterController);
 
-        NetworkPlayerController movement = player.AddComponent<NetworkPlayerController>();
-        NetworkPlayerGrab grab = player.AddComponent<NetworkPlayerGrab>();
+        PlayerMovement motor = player.AddComponent<PlayerMovement>();
+        NetworkPlayerController netController = player.AddComponent<NetworkPlayerController>();
+        PlayerGrab grabMotor = player.AddComponent<PlayerGrab>();
+        player.AddComponent<NetworkPlayerGrab>();
         player.AddComponent<PerceptionTarget>();
         player.AddComponent<FootstepNoiseEmitter>();
 
-        SerializedObject movementSo = new SerializedObject(movement);
+        SerializedObject motorSo = new SerializedObject(motor);
+        motorSo.FindProperty("cameraPivot").objectReferenceValue = cameraPivot.transform;
+        motorSo.FindProperty("walkSpeed").floatValue = 3f;
+        motorSo.FindProperty("sprintSpeed").floatValue = 6f;
+        motorSo.FindProperty("gravity").floatValue = -50f;
+        motorSo.ApplyModifiedPropertiesWithoutUndo();
+
+        SerializedObject movementSo = new SerializedObject(netController);
         movementSo.FindProperty("cameraPivot").objectReferenceValue = cameraPivot.transform;
         movementSo.FindProperty("playerCamera").objectReferenceValue = camera;
         movementSo.ApplyModifiedPropertiesWithoutUndo();
 
-        SerializedObject grabSo = new SerializedObject(grab);
-        grabSo.FindProperty("playerCamera").objectReferenceValue = camera;
+        SerializedObject grabSo = new SerializedObject(grabMotor);
+        grabSo.FindProperty("holdDistance").floatValue = 2.2f;
         grabSo.ApplyModifiedPropertiesWithoutUndo();
 
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);

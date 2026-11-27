@@ -1,14 +1,20 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// Motor de movimiento compartido (local, Gym y online).
+/// Online: NetworkPlayerController activa/desactiva y engancha soft-push / crouch sync.
+/// </summary>
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(PlayerInput))]
+[DisallowMultipleComponent]
 public class PlayerMovement : MonoBehaviour
 {
-    [SerializeField] float walkSpeed = 5f;
-    [SerializeField] float sprintSpeed = 8f;
+    [SerializeField] float walkSpeed = 3f;
+    [SerializeField] float sprintSpeed = 6f;
     [SerializeField] float jumpHeight = 1.2f;
-    [SerializeField] float gravity = -20f;
+    [SerializeField] float gravity = -50f;
     [SerializeField] float mouseSensitivity = 0.12f;
     [SerializeField] float stickSensitivity = 120f;
     [SerializeField] float softPushAcceleration = 14f;
@@ -34,8 +40,20 @@ public class PlayerMovement : MonoBehaviour
     float pitch;
     bool jumpQueued;
     bool crouchToggleLatched;
+    bool motorActive = true;
 
     public Camera PlayerCamera { get; private set; }
+
+    /// <summary>Si está asignado, el soft-push de props lo gestiona la capa de red.</summary>
+    public Action<Rigidbody, Vector3> SoftPushHandler { get; set; }
+
+    public event Action<bool> CrouchChanged;
+
+    public bool MotorActive
+    {
+        get => motorActive;
+        set => motorActive = value;
+    }
 
     public void Initialize(Transform pivot, Camera camera)
     {
@@ -46,6 +64,9 @@ public class PlayerMovement : MonoBehaviour
         if (!TryGetComponent(out stance))
             stance = gameObject.AddComponent<PlayerStance>();
         stance.Initialize(pivot);
+
+        TryGetComponent(out grab);
+        RebindActions();
     }
 
     /// <summary>Tras cambiar el InputActionAsset del PlayerInput.</summary>
@@ -65,6 +86,13 @@ public class PlayerMovement : MonoBehaviour
         TryGetComponent(out stance);
         TryGetComponent(out health);
         TryGetComponent(out grab);
+
+        if (cameraPivot == null)
+        {
+            Transform found = transform.Find("CameraPivot");
+            if (found != null)
+                cameraPivot = found;
+        }
     }
 
     void OnEnable()
@@ -108,6 +136,9 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
+        if (!motorActive)
+            return;
+
         if (pauseMenu == null)
             TryGetComponent(out pauseMenu);
         if (health == null)
@@ -140,20 +171,26 @@ public class PlayerMovement : MonoBehaviour
 
         bool holdCrouch = crouchAction != null && crouchAction.IsPressed();
         bool wantCrouch = holdCrouch || crouchToggleLatched;
+        bool before = stance.IsCrouching;
         stance.SetCrouching(wantCrouch);
 
         // Techo: no pudo levantarse → mantener latch de toggle.
         if (!wantCrouch && stance.IsCrouching)
             crouchToggleLatched = true;
+
+        if (stance.IsCrouching != before)
+            CrouchChanged?.Invoke(stance.IsCrouching);
     }
 
     void Look()
     {
-        if (cameraPivot == null)
+        if (cameraPivot == null || lookAction == null)
             return;
 
         Vector2 look = lookAction.ReadValue<Vector2>();
-        bool usingMouse = playerInput.currentControlScheme == "Keyboard&Mouse";
+        bool usingMouse = playerInput != null
+                          && (playerInput.currentControlScheme == "Keyboard&Mouse"
+                              || playerInput.currentControlScheme == null);
         float scale = usingMouse ? mouseSensitivity : stickSensitivity * Time.deltaTime;
 
         float previousYaw = yaw;
@@ -173,6 +210,9 @@ public class PlayerMovement : MonoBehaviour
 
     void Move()
     {
+        if (controller == null || moveAction == null || sprintAction == null)
+            return;
+
         bool grounded = controller.isGrounded;
         if (grounded && velocity.y < 0f)
             velocity.y = -2f;
@@ -199,12 +239,18 @@ public class PlayerMovement : MonoBehaviour
 
     void SeparateFromPlayers()
     {
+        if (controller == null)
+            return;
+
         float probe = controller.radius + 0.35f;
         PlayerSoftPush.SeparateFromNearbyPlayers(controller, probe, playerSeparateSpeed, Time.deltaTime);
     }
 
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
+        if (!motorActive)
+            return;
+
         Rigidbody body = hit.rigidbody;
         if (body == null || body.isKinematic)
             return;
@@ -212,6 +258,12 @@ public class PlayerMovement : MonoBehaviour
         Vector3 pushDir = new Vector3(hit.moveDirection.x, 0f, hit.moveDirection.z);
         if (pushDir.sqrMagnitude < 0.0001f)
             return;
+
+        if (SoftPushHandler != null)
+        {
+            SoftPushHandler.Invoke(body, hit.point);
+            return;
+        }
 
         PlayerSoftPush.SoftPushDynamicBody(
             body,

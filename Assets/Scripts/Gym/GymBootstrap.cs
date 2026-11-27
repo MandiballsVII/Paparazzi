@@ -191,7 +191,7 @@ public class GymBootstrap : MonoBehaviour
             instance.transform.SetPositionAndRotation(spawn.position, spawn.rotation);
         else
         {
-            instance.transform.position = new Vector3(index * 2f, 1f, 0f);
+            instance.transform.position = new Vector3(index * 2f, 0.5f, 0f);
             instance.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
         }
 
@@ -230,7 +230,11 @@ public class GymBootstrap : MonoBehaviour
             if (movement != null)
                 movement.Initialize(instance.transform.Find("CameraPivot"), cam);
             if (instance.TryGetComponent(out PlayerGrab grab))
+            {
+                grab.ClearNetworkHandlers();
+                grab.GrabActive = true;
                 grab.Initialize(cam);
+            }
             if (instance.TryGetComponent(out PlayerPhotoCapture capture))
             {
                 capture.Initialize(cam);

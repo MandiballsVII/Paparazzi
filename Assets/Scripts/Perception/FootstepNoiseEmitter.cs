@@ -23,7 +23,7 @@ public class FootstepNoiseEmitter : MonoBehaviour
     float walkSpeedThreshold = 0.35f;
 
     [SerializeField]
-    float sprintSpeedThreshold = 6.2f;
+    float sprintSpeedThreshold = 5.5f;
 
     [SerializeField]
     float landingMinVerticalSpeed = 3f;
